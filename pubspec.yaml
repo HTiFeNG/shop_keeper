@@ -1,0 +1,65 @@
+name: shop_keeper
+description: "店铺管家 —— 商品管理 × 营业额记录，一站式守店工具（Android + Web）。"
+publish_to: 'none' # 仅本地使用，不发布到 pub.dev
+
+version: 2.0.2+4
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # 本地数据持久化（商品/分类/销售记录以 JSON 形式存储；Web 端自动落 localStorage）
+  shared_preferences: ^2.5.3
+
+  # 摄像头扫码（条码/二维码，仅 Android/iOS；Web 端降级提示）
+  mobile_scanner: ^7.0.1
+
+  # 文件导出后调起系统分享（Android 端 Excel/CSV/备份文件分享）
+  share_plus: ^11.0.0
+
+  # 获取临时文件目录，用于导出文件
+  path_provider: ^2.1.5
+
+  # 导入时选择 CSV/JSON 文件
+  file_picker: ^10.1.9
+
+  # 月度营收柱状图（支持点击柱子查看当日明细）
+  fl_chart: ^0.70.0
+
+  # Android 端 Excel 双 Sheet 导出（仅 io 端 conditional import，Web 不引入）
+  excel: ^4.0.0
+
+  # Web 端 Blob 下载（conditional import，仅 Web 编译时引入）
+  web: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+  # 一键生成 Android/Web 各分辨率应用图标
+  flutter_launcher_icons: ^0.14.0
+
+# 应用图标配置：以一份 1024x1024 PNG 生成全平台图标
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: true
+  adaptive_icon_background: "#FEFFFA"
+  adaptive_icon_foreground: "assets/icon/app_icon_fg.png"
+  ios: false
+  web:
+    generate: true
+    background_color: "#FFF8F0"
+    theme_color: "#F57C00"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/icon/
