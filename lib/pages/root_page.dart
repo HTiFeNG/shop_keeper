@@ -4,9 +4,8 @@ import 'package:flutter/services.dart';
 import '../services/store_service.dart';
 import 'product_manage_page.dart';
 import 'sales_page.dart';
-import 'search_page.dart';
 
-/// 根页面：底部三 Tab（营业额 / 商品 / 搜索）。
+/// 根页面：底部两 Tab（营业额 / 商品）。
 ///
 /// - IndexedStack 保持各页状态，切换不丢失；
 /// - 监听 [StoreService.salePrefill]：商品页「记一笔」→ 自动切到营业额首页，
@@ -91,7 +90,6 @@ class _RootPageState extends State<RootPage> {
               children: const [
                 SalesPage(),
                 ProductManagePage(),
-                SearchPage(),
               ],
             );
           },
@@ -110,11 +108,6 @@ class _RootPageState extends State<RootPage> {
               icon: Icon(Icons.inventory_2_outlined),
               selectedIcon: Icon(Icons.inventory_2),
               label: '商品',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.search_outlined),
-              selectedIcon: Icon(Icons.search),
-              label: '搜索',
             ),
           ],
         ),

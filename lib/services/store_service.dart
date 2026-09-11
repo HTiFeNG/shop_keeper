@@ -26,13 +26,11 @@ class StoreService extends ChangeNotifier {
 
   static const String _kProducts = 'sk_products';
   static const String _kCategories = 'sk_categories';
-  static const String _kHistory = 'sk_search_history';
   static const String _kSales = 'sk_sales';
   static const String _kSeeded = 'sk_seeded';
 
   List<Product> products = [];
   List<String> categories = []; // 不含固定项「全部」「未分类」
-  List<String> searchHistory = []; // 最近搜索关键词，最多 10 条，新的在前
 
   /// 销售记录：键为日期 `YYYY-MM-DD`
   Map<String, DailyRecord> sales = {};
@@ -68,9 +66,6 @@ class StoreService extends ChangeNotifier {
 
     // ---- 首启询问语义：不再自动载入示例数据 ----
     seeded = prefs.getBool(_kSeeded) ?? false;
-
-    // ---- 搜索历史 ----
-    searchHistory = prefs.getStringList(_kHistory) ?? [];
 
     // ---- 销售记录 ----
     final salesRaw = prefs.getString(_kSales);
@@ -254,25 +249,6 @@ class StoreService extends ChangeNotifier {
   bool _isDuplicateCategory(String name, {String? ignore}) {
     if (name == kCategoryAll || name == kCategoryNone) return true;
     return categories.any((c) => c == name && c != ignore);
-  }
-
-  // ==================== 搜索历史 ====================
-
-  /// 记录一次搜索：去重、置顶、最多保留 10 条
-  void addSearchHistory(String query) {
-    final q = query.trim();
-    if (q.isEmpty) return;
-    searchHistory.remove(q);
-    searchHistory.insert(0, q);
-    if (searchHistory.length > 10) searchHistory = searchHistory.sublist(0, 10);
-    _persistHistory();
-    notifyListeners();
-  }
-
-  void clearSearchHistory() {
-    searchHistory = [];
-    _persistHistory();
-    notifyListeners();
   }
 
   // ==================== 销售记录 ====================
@@ -605,11 +581,6 @@ class StoreService extends ChangeNotifier {
   Future<void> _persistCategories() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_kCategories, categories);
-  }
-
-  Future<void> _persistHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_kHistory, searchHistory);
   }
 
   Future<void> _persistSales() async {
