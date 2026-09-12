@@ -44,6 +44,7 @@ class MonthlyStats {
     required this.recordCount,
     required this.prevMonthRevenue,
     required this.estimatedProfit,
+    required this.profitMissingCostLines,
     required this.productRanking,
   });
 
@@ -56,7 +57,10 @@ class MonthlyStats {
   final int totalItems; // 总件数
   final int recordCount; // 有记录天数
   final double prevMonthRevenue; // 上月营收（环比）
-  final double estimatedProfit; // 估算毛利（仅关联商品且进价>0）
+  final double estimatedProfit; // 估算毛利（售出时进价快照口径，亏本计负）
+  /// 未计入毛利的明细行数（手输行 / 当时没填进价）。> 0 时 UI 要提示，
+  /// 否则用户会以为「毛利」是全量的，实际漏了一部分。
+  final int profitMissingCostLines;
   final List<ProductRank> productRanking; // 商品维度排行（按营收降序）
 
   /// 环比增长率（上月为 0 → null 表示不可比）

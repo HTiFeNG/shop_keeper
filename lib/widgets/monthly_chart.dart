@@ -63,7 +63,8 @@ class MonthlyChart extends StatelessWidget {
                       ? '${(v / 10000).toStringAsFixed(1)}万'
                       : v.toStringAsFixed(0),
                   style: const TextStyle(
-                      fontSize: 10, color: AppTheme.textSecondary),
+                      fontSize: AppTheme.fontCaption,
+                      color: AppTheme.textSecondary),
                 ),
               ),
             ),
@@ -85,7 +86,8 @@ class MonthlyChart extends StatelessWidget {
                     child: Text(
                       day,
                       style: const TextStyle(
-                          fontSize: 10, color: AppTheme.textSecondary),
+                          fontSize: AppTheme.fontCaption,
+                          color: AppTheme.textSecondary),
                     ),
                   );
                 },
@@ -100,7 +102,9 @@ class MonthlyChart extends StatelessWidget {
                 final d = dailyData[group.x.toInt()];
                 return BarTooltipItem(
                   '${d.date}\n营业额 ${formatCurrency(d.revenue)}\n${d.productCount} 种 · ${d.totalQuantity} 件',
-                  const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
+                  const TextStyle(
+                      fontSize: AppTheme.fontCaption,
+                      color: AppTheme.textPrimary),
                 );
               },
             ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/store_service.dart';
+import '../theme/app_theme.dart';
 import 'product_manage_page.dart';
 import 'sales_page.dart';
 
@@ -83,7 +84,16 @@ class _RootPageState extends State<RootPage> {
             final store = StoreService.instance;
             if (!store.ready) {
               // 首次加载数据时显示启动画面
-              return const Center(child: CircularProgressIndicator());
+              return const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 14),
+                    Text('店铺管家', style: AppTheme.pageTitle),
+                  ],
+                ),
+              );
             }
             return IndexedStack(
               index: _tab,
@@ -94,22 +104,30 @@ class _RootPageState extends State<RootPage> {
             );
           },
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _tab,
-          onDestinationSelected: (i) => setState(() => _tab = i),
-          height: 68,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined),
-              selectedIcon: Icon(Icons.receipt_long),
-              label: '营业额',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.inventory_2_outlined),
-              selectedIcon: Icon(Icons.inventory_2),
-              label: '商品',
-            ),
-          ],
+        bottomNavigationBar: ListenableBuilder(
+          listenable: StoreService.instance,
+          builder: (context, _) {
+            final ready = StoreService.instance.ready;
+            return NavigationBar(
+              selectedIndex: _tab,
+              // 数据还没加载完时先别让用户点（点了也不会切页面）
+              onDestinationSelected:
+                  ready ? (i) => setState(() => _tab = i) : null,
+              height: 68,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.receipt_long_outlined),
+                  selectedIcon: Icon(Icons.receipt_long),
+                  label: '营业额',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.inventory_2_outlined),
+                  selectedIcon: Icon(Icons.inventory_2),
+                  label: '商品',
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

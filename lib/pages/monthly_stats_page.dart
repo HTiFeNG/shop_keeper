@@ -76,7 +76,8 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
       decoration: AppTheme.cardDecoration,
       child: Column(
         children: [
-          Icon(Icons.bar_chart, size: 56, color: Colors.grey.shade300),
+          Icon(Icons.bar_chart,
+              size: 56, color: AppTheme.textSecondary.withValues(alpha: 0.45)),
           const SizedBox(height: 12),
           Text('${du.monthLabel(_month)} 暂无营业记录', style: AppTheme.body),
           const SizedBox(height: 6),
@@ -89,49 +90,54 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
 
   List<Widget> _statsContent(MonthlyStats stats) {
     return [
-      // 四宫格
-      GridView.count(
-        crossAxisCount: 2,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 2.1,
-        children: [
-          StatCard(
-            label: '当月总营业额',
-            value: formatCurrency(stats.totalRevenue),
-            color: AppTheme.primary,
-          ),
-          StatCard(
-            label: '日均营业额',
-            value: formatCurrency(stats.averageRevenue),
-            color: AppTheme.success,
-          ),
-          StatCard(
-            label: '最高营业额日',
-            value: formatCurrency(stats.maxRevenue),
-            subLabel: stats.maxRevenueDate != null
-                ? du.dayLabel(stats.maxRevenueDate!)
-                : null,
-            color: AppTheme.chartPeak,
-          ),
-          StatCard(
-            label: '销售总件数',
-            value: '${stats.totalItems} 件',
-            subLabel: '有记录 ${stats.recordCount} 天',
-            color: const Color(0xFF7B1FA2),
-          ),
-        ],
+      // 四宫格：宽屏（平板 / 桌面）排 4 列，否则 2 列。
+      // 原来固定 2 列，1280px 窗口下每张卡会被拉到近 600px 宽，很难扫读。
+      LayoutBuilder(
+        builder: (context, c) {
+          final cols = c.maxWidth > 900 ? 4 : 2;
+          return GridView.count(
+            crossAxisCount: cols,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: cols == 4 ? 2.8 : 2.1,
+            children: [
+              StatCard(
+                label: '当月总营业额',
+                value: formatCurrency(stats.totalRevenue),
+                color: AppTheme.primary,
+              ),
+              StatCard(
+                label: '日均营业额',
+                value: formatCurrency(stats.averageRevenue),
+                color: AppTheme.success,
+              ),
+              StatCard(
+                label: '最高营业额日',
+                value: formatCurrency(stats.maxRevenue),
+                subLabel: stats.maxRevenueDate != null
+                    ? du.dayLabel(stats.maxRevenueDate!)
+                    : null,
+                color: AppTheme.chartPeak,
+              ),
+              StatCard(
+                label: '销售总件数',
+                value: '${stats.totalItems} 件',
+                subLabel: '有记录 ${stats.recordCount} 天',
+                // 原来是全 App 唯一一处紫色，已并入暖色系
+                color: AppTheme.primaryText,
+              ),
+            ],
+          );
+        },
       ),
       const SizedBox(height: 12),
       // 环比条
       _momBar(stats),
-      // 估算毛利（P2-1 顺带）
-      if (stats.estimatedProfit > 0) ...[
-        const SizedBox(height: 10),
-        _profitBar(stats),
-      ],
+      // 估算毛利：亏本时也要显示（旧实现 > 0 才显示，等于把亏损藏起来）
+      const SizedBox(height: 10),
+      _profitBar(stats),
       const SizedBox(height: 12),
       // 柱状图
       Container(
@@ -201,25 +207,49 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
   }
 
   /// 估算毛利条
+  ///
+  /// 毛利按「售出时的进价快照」计算，所以之后修改商品进价**不会**改写已经
+  /// 过去月份的毛利；亏本销售也如实显示为负数（旧实现用 margin > 0 过滤，
+  /// 会把亏损当 0，等于高估利润）。
   Widget _profitBar(MonthlyStats stats) {
+    final profit = stats.estimatedProfit;
+    final negative = profit < 0;
+    final color = negative ? AppTheme.negativeStockRed : AppTheme.success;
+    final missing = stats.profitMissingCostLines;
     return Container(
       decoration: AppTheme.cardDecoration,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.savings_outlined,
-              color: AppTheme.success, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '估算毛利约 ${formatCurrency(stats.estimatedProfit)}',
-              style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.success),
-            ),
+          Row(
+            children: [
+              Icon(negative ? Icons.trending_down : Icons.savings_outlined,
+                  color: color, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${negative ? '估算亏损约' : '估算毛利约'} '
+                  '${formatCurrency(profit.abs())}',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: color),
+                ),
+              ),
+            ],
           ),
-          const Text('按零售价 − 参考进价估算', style: AppTheme.caption),
+          const SizedBox(height: 4),
+          // 口径说明单独一行：原来和 14px 正文挤在同一 Row，大字号下会被压没
+          const Text('按「零售价 − 售出时的参考进价」估算，之后改进价不会改写历史',
+              style: AppTheme.caption),
+          if (missing > 0) ...[
+            const SizedBox(height: 2),
+            Text('有 $missing 条明细没填进价，未计入毛利',
+                style: const TextStyle(
+                    fontSize: AppTheme.fontCaption,
+                    color: AppTheme.primaryText)),
+          ],
         ],
       ),
     );
@@ -250,10 +280,11 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
 
   Widget _rankRow(ProductRank rank, int order, double maxRevenue) {
     final fraction = maxRevenue > 0 ? rank.revenue / maxRevenue : 0.0;
+    // 名次配色：原来第 1 名用 #FFB300，在白底上只有 1.79:1，数字几乎看不见
     final medalColor = switch (order) {
-      1 => const Color(0xFFFFB300),
-      2 => const Color(0xFFB0BEC5),
-      3 => const Color(0xFFBCAAA4),
+      1 => const Color(0xFF8D5300),
+      2 => const Color(0xFF4E5A61),
+      3 => const Color(0xFF6B4A33),
       _ => AppTheme.textSecondary,
     };
     return Row(
@@ -269,7 +300,9 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
           child: Text(
             '$order',
             style: TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w700, color: medalColor),
+                fontSize: AppTheme.fontCaption,
+                fontWeight: FontWeight.w700,
+                color: medalColor),
           ),
         ),
         const SizedBox(width: 10),

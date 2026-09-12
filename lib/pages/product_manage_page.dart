@@ -21,8 +21,10 @@ import 'product_edit_page.dart';
 /// 1. 标题栏（备份恢复菜单 + 批量 + 新增）
 /// 2. 实时搜索框（按商品名或条码）
 /// 3. 分类：宽屏(>720) 左侧栏 / 手机端顶部横滑 Chips
-/// 4. 商品列表（库存预警 + 星标 + 记一笔）
+/// 4. 商品列表（星标 + 记一笔 + 缺进价提示）
 /// 5. 底部操作条（总数 / 导出 / 导入 / 扫码 —— 扫码仅手机端显示）
+///
+/// 注：库存已随「库存功能」移除（3.0.0），本页不再显示/编辑库存。
 class ProductManagePage extends StatefulWidget {
   const ProductManagePage({super.key});
 
@@ -217,8 +219,11 @@ class _ProductManagePageState extends State<ProductManagePage> {
   Future<void> _export() async {
     try {
       await ExportService.exportProducts(store.exportCsv());
+      _toast('已导出商品表');
     } catch (_) {
-      // 导出失败静默处理
+      // 原来这里是 catch (_) { // 导出失败静默处理 } —— 用户点了导出、
+      // 什么都没发生，还以为文件已经存好了。
+      _toastErr('导出没成功，请检查手机存储空间后重试', retry: _export);
     }
   }
 
@@ -235,12 +240,15 @@ class _ProductManagePageState extends State<ProductManagePage> {
       var text = utf8.decode(bytes, allowMalformed: true);
       if (text.startsWith('﻿')) text = text.substring(1);
       final rows = const CsvCodec().decode(text);
-      // 跳过表头行：与 Product.csvHeader 首列「编号」对齐判断，不依赖列数
-      if (rows.isNotEmpty &&
-          rows.first.isNotEmpty &&
-          rows.first[0] == '编号') {
-        rows.removeAt(0);
+      // 必须认得出表头：选错文件（照片、聊天记录导出）时那一行会被当成
+      // 「名称」直接变成一个垃圾商品，旧实现不会报任何错。
+      if (rows.isEmpty ||
+          rows.first.isEmpty ||
+          rows.first[0].trim() != '编号') {
+        _toastErr('这不是商品数据文件（缺少「编号」表头），请重新选择');
+        return;
       }
+      rows.removeAt(0);
       if (rows.isEmpty) {
         _toast('文件中没有可导入的数据');
         return;
@@ -271,9 +279,11 @@ class _ProductManagePageState extends State<ProductManagePage> {
       if (ok != true) return;
 
       final r = store.importProducts(incoming);
-      _toast('导入完成：覆盖 ${r.overwritten} 条，新增 ${r.added} 条，跳过 ${r.skipped} 条');
-    } catch (e) {
-      _toast('导入失败：$e');
+      // 这条信息要读三个数字，2 秒根本看不完
+      _toast('导入完成：覆盖 ${r.overwritten} 条，新增 ${r.added} 条，跳过 ${r.skipped} 条',
+          seconds: 6);
+    } catch (_) {
+      _toastErr('文件读不出来，请确认选的是商品 CSV 文件', retry: _import);
     }
   }
 
@@ -281,12 +291,17 @@ class _ProductManagePageState extends State<ProductManagePage> {
   Future<void> _backup() async {
     try {
       await ExportService.exportBackup(store.exportBackup());
-    } catch (e) {
-      _toast('备份失败：$e');
+      store.markBackedUp();
+      _toast('备份已导出，请把这个文件保存好');
+    } catch (_) {
+      _toastErr('备份没成功，请检查手机存储空间后重试', retry: _backup);
     }
   }
 
-  /// 从备份文件恢复（全量替换，覆盖前二次确认）
+  /// 从备份文件恢复
+  ///
+  /// 流程：选文件 → **先预览内容**（商品/天数/明细条数/导出时间）→ 二次确认
+  /// → 恢复 → 告知结果，并支持一键撤销回恢复前的状态。
   Future<void> _restore() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -297,12 +312,26 @@ class _ProductManagePageState extends State<ProductManagePage> {
       if (bytes == null) return;
       final text = utf8.decode(bytes, allowMalformed: true);
 
+      final preview = store.previewBackup(text);
+      if (preview == null) {
+        _toastErr('这不是店铺管家的备份文件，请重新选择');
+        return;
+      }
       if (!mounted) return;
+
+      final when = preview.exportedAt == null
+          ? '未记录'
+          : preview.exportedAt!.replaceFirst('T', ' ').split('.').first;
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('恢复数据'),
-          content: const Text('恢复将【完全覆盖】当前所有商品、分类和销售记录，且不可撤销。确定从备份文件恢复吗？'),
+          title: const Text('确认恢复'),
+          content: Text('这份备份包含：\n'
+              '· ${preview.productCount} 个商品\n'
+              '· ${preview.dayCount} 天的营业额（共 ${preview.itemCount} 条明细）\n'
+              '· 导出时间：$when\n\n'
+              '恢复会用上面的内容【完全覆盖】现在的数据。\n'
+              '不用担心选错：恢复前会自动存一份当前数据，之后可以一键撤销。'),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -311,26 +340,74 @@ class _ProductManagePageState extends State<ProductManagePage> {
               style:
                   FilledButton.styleFrom(backgroundColor: AppTheme.priceRed),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('覆盖恢复'),
+              child: const Text('确认恢复'),
             ),
           ],
         ),
       );
       if (ok != true) return;
 
-      final success = store.importBackup(text);
-      _toast(success ? '恢复成功，数据已还原' : '备份文件格式不对，恢复失败');
-    } catch (e) {
-      _toast('恢复失败：$e');
+      final r = await store.importBackup(text);
+      if (!mounted) return;
+      if (!r.ok) {
+        _toastErr('恢复失败：${r.reason}');
+        return;
+      }
+      final skipped = r.skipped > 0 ? '，跳过 ${r.skipped} 条坏数据' : '';
+      _toastErr('恢复完成：${r.productCount} 个商品、${r.dayCount} 天记录$skipped'
+          '（如需反悔可点「撤销恢复」）');
+    } catch (_) {
+      _toastErr('文件读不出来，请确认选的是备份文件（.json）');
     }
   }
 
-  void _toast(String msg) {
+  /// 撤销上一次恢复
+  Future<void> _undoRestore() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('撤销恢复'),
+        content: const Text('将数据还原成上一次恢复之前的样子。确定吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('撤销恢复')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final done = await store.undoLastRestore();
+    if (!mounted) return;
+    if (done) {
+      _toast('已恢复到上一次恢复之前的状态');
+    } else {
+      _toastErr('恢复之前没有可用的快照，无法撤销');
+    }
+  }
+
+  void _toast(String msg, {int seconds = 3}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-          SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
+          SnackBar(content: Text(msg), duration: Duration(seconds: seconds)));
+  }
+
+  /// 失败提示：一句人话 + 更久停留 + 可重试（原来是把 $e 裸异常显示 2 秒）
+  void _toastErr(String msg, {Future<void> Function()? retry}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(msg),
+        duration: const Duration(seconds: 6),
+        action: retry == null
+            ? null
+            : SnackBarAction(label: '重试', onPressed: () => retry()),
+      ));
   }
 
   // ==================== 批量操作 ====================
@@ -525,7 +602,13 @@ class _ProductManagePageState extends State<ProductManagePage> {
         padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
         child: Row(
           children: [
-            const Text('商品管理', style: AppTheme.pageTitle),
+            // Flexible + 省略号：大字号（Android「大字体」）下标题不再把整行挤爆
+            const Flexible(
+              child: Text('商品管理',
+                  style: AppTheme.pageTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ),
             const Spacer(),
             if (_batchMode)
               TextButton(
@@ -534,15 +617,16 @@ class _ProductManagePageState extends State<ProductManagePage> {
               )
             else ...[
               PopupMenuButton<String>(
-                tooltip: '数据备份',
+                tooltip: '数据备份与恢复',
                 icon: const Icon(Icons.backup_outlined,
                     color: AppTheme.textSecondary),
                 onSelected: (v) {
                   if (v == 'backup') _backup();
                   if (v == 'restore') _restore();
+                  if (v == 'undoRestore') _undoRestore();
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
                     value: 'backup',
                     child: ListTile(
                       dense: true,
@@ -551,7 +635,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                       title: Text('备份全部数据'),
                     ),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem(
                     value: 'restore',
                     child: ListTile(
                       dense: true,
@@ -560,15 +644,26 @@ class _ProductManagePageState extends State<ProductManagePage> {
                       title: Text('从备份恢复'),
                     ),
                   ),
+                  if (store.hasRestoreSnapshot)
+                    const PopupMenuItem(
+                      value: 'undoRestore',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.undo),
+                        title: Text('撤销上次恢复'),
+                      ),
+                    ),
                 ],
               ),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primary,
+                  foregroundColor: AppTheme.primaryText,
                   side: const BorderSide(color: AppTheme.primary),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  minimumSize: const Size(0, 36),
+                  // 48dp：原为 36，且与「新增」只隔 8dp，很容易点错
+                  minimumSize: const Size(0, 48),
                 ),
                 onPressed: _enterBatchMode,
                 child: const Row(
@@ -576,7 +671,8 @@ class _ProductManagePageState extends State<ProductManagePage> {
                   children: [
                     Icon(Icons.checklist, size: 16),
                     SizedBox(width: 4),
-                    Text('批量', style: TextStyle(fontSize: 13)),
+                    Text('批量',
+                        style: TextStyle(fontSize: AppTheme.fontCaption)),
                   ],
                 ),
               ),
@@ -585,7 +681,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                 style: FilledButton.styleFrom(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  minimumSize: const Size(0, 36),
+                  minimumSize: const Size(0, 48),
                 ),
                 onPressed: () => _openEdit(),
                 icon: const Icon(Icons.add, size: 18),
@@ -608,6 +704,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
             suffixIcon: _query.isEmpty
                 ? null
                 : IconButton(
+                    tooltip: '清空搜索',
                     icon: const Icon(Icons.close, size: 18),
                     onPressed: () {
                       _searchCtrl.clear();
@@ -625,12 +722,15 @@ class _ProductManagePageState extends State<ProductManagePage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.inbox_outlined, size: 48, color: Colors.grey.shade400),
+            Icon(Icons.inbox_outlined,
+                size: 48, color: AppTheme.textSecondary.withValues(alpha: 0.45)),
             const SizedBox(height: 8),
             const Text('暂无商品', style: AppTheme.caption),
             const SizedBox(height: 4),
             const Text('点右上角「新增」录入第一件商品',
-                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                style: TextStyle(
+                    fontSize: AppTheme.fontCaption,
+                    color: AppTheme.textSecondary)),
           ],
         ),
       );
@@ -650,26 +750,31 @@ class _ProductManagePageState extends State<ProductManagePage> {
                       fontWeight: FontWeight.w600),
                 ),
                 const Spacer(),
-                GestureDetector(
+                // 原来是个裸 GestureDetector + 13px 文字，实际可点区只有约 18dp
+                InkWell(
                   onTap: () => _toggleSelectAll(products),
-                  child: Row(
-                    children: [
-                      Icon(
-                        products.every((p) => _selectedIds.contains(p.id))
-                            ? Icons.deselect
-                            : Icons.select_all,
-                        size: 16,
-                        color: AppTheme.primary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        products.every((p) => _selectedIds.contains(p.id))
-                            ? '取消全选'
-                            : '全选',
-                        style: const TextStyle(
-                            fontSize: 13, color: AppTheme.primary),
-                      ),
-                    ],
+                  borderRadius: BorderRadius.circular(8),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 48),
+                    child: Row(
+                      children: [
+                        Icon(
+                          products.every((p) => _selectedIds.contains(p.id))
+                              ? Icons.deselect
+                              : Icons.select_all,
+                          size: 20,
+                          color: AppTheme.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          products.every((p) => _selectedIds.contains(p.id))
+                              ? '取消全选'
+                              : '全选',
+                          style: const TextStyle(
+                              fontSize: 14, color: AppTheme.primaryText),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -684,6 +789,8 @@ class _ProductManagePageState extends State<ProductManagePage> {
               onTap: () => _openEdit(products[i]),
               onDelete: () => store.deleteProduct(products[i].id),
               onQuickSale: () => store.requestPrefill(products[i].id),
+              // 直接在列表里加星：不必进编辑页，否则「一键记账」很难被发现
+              onToggleFavorite: () => store.toggleFavorite(products[i].id),
               selected: _selectedIds.contains(products[i].id),
               onSelectToggle:
                   _batchMode ? () => _toggleSelect(products[i].id) : null,
@@ -696,7 +803,8 @@ class _ProductManagePageState extends State<ProductManagePage> {
 
   /// 底部操作条
   Widget _bottomBar() => Container(
-        color: AppTheme.primary,
+        // 原来用 primary(#EF6C00) 打底配白字，只有 3.08:1；深橙后 5.6:1
+        color: AppTheme.totalGradientEnd,
         child: SafeArea(
           top: false,
           child: Padding(
@@ -709,7 +817,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                         style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize: 13),
+                            fontSize: 14),
                       ),
                       const Spacer(),
                       _barBtn(Icons.drive_file_move_outline, '移动分类',
@@ -725,7 +833,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                         style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize: 13),
+                            fontSize: 14),
                       ),
                       const Spacer(),
                       _barBtn(Icons.ios_share, '导出', _export),
@@ -740,21 +848,25 @@ class _ProductManagePageState extends State<ProductManagePage> {
 
   Widget _barBtn(IconData icon, String label, VoidCallback? onTap) {
     final disabled = onTap == null;
+    // 约束到 ≥48dp：InkWell 本身不会扩大命中区，原来实际约 44dp，
+    // 而「导出 / 导入 / 扫码」紧挨着，很容易点错（导入会覆盖数据）。
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 56, minHeight: 48),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon,
-                color: disabled ? Colors.white38 : Colors.white, size: 20),
+                color: disabled ? Colors.white70 : Colors.white, size: 20),
             const SizedBox(height: 2),
             Text(label,
                 style: TextStyle(
-                    color: disabled ? Colors.white38 : Colors.white,
-                    fontSize: 11)),
+                    color: disabled ? Colors.white70 : Colors.white,
+                    fontSize: AppTheme.fontCaption)),
           ],
         ),
       ),

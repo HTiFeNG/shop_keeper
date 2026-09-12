@@ -4,12 +4,15 @@ import '../models/product.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 
-/// 商品列表项：商品名、条码、库存、红色零售价、星标、「记一笔」快捷按钮。
+/// 商品列表项：商品名、条码、品牌类别、红色零售价、星标、「记一笔」快捷按钮。
 ///
-/// - 库存：负数红色加粗、0 < stock ≤ 3 橙色预警、其余灰色；
 /// - 点击整行 → 编辑；垃圾桶 → 删除（带确认）；
 /// - 「记一笔」→ 首页预填一行（store.requestPrefill）；
+/// - ★ → 切换常用商品（直接影响首页一键记账栏）；
+/// - 未填参考进价 → 提示「进价未填」，因为毛利会漏算这一项；
 /// - 批量模式（onSelectToggle != null）：左侧复选框，整行切换选中。
+///
+/// 注：库存已随「库存功能」移除，本列表不再显示库存。
 class ProductTile extends StatelessWidget {
   const ProductTile({
     super.key,
@@ -17,6 +20,7 @@ class ProductTile extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     this.onQuickSale,
+    this.onToggleFavorite,
     this.selected = false,
     this.onSelectToggle,
   });
@@ -27,6 +31,9 @@ class ProductTile extends StatelessWidget {
 
   /// 「记一笔」快捷回调（null 时不显示按钮）
   final VoidCallback? onQuickSale;
+
+  /// 切换星标（null 时不显示星标按钮）
+  final VoidCallback? onToggleFavorite;
   final bool selected;
   final VoidCallback? onSelectToggle; // 非 null 时进入批量模式
 
@@ -86,7 +93,7 @@ class ProductTile extends StatelessWidget {
                           const Padding(
                             padding: EdgeInsets.only(right: 4),
                             child: Icon(Icons.star,
-                                size: 15, color: AppTheme.warningYellow),
+                                size: 15, color: AppTheme.chartPeak),
                           ),
                         Expanded(
                           child: Text(
@@ -107,7 +114,8 @@ class ProductTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 12, color: AppTheme.textSecondary),
+                          fontSize: AppTheme.fontCaption,
+                          color: AppTheme.textSecondary),
                     ),
                     if (product.brand.isNotEmpty ||
                         product.category.isNotEmpty) ...[
@@ -120,19 +128,18 @@ class ProductTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 11, color: AppTheme.textSecondary),
+                            fontSize: AppTheme.fontCaption,
+                            color: AppTheme.textSecondary),
                       ),
                     ],
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              // 中：库存预警 + 红色零售价
+              // 中：零售价（+ 缺进价提示，因为那会让毛利漏算）
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  _stockLabel(),
-                  const SizedBox(height: 2),
                   Text(
                     '¥${fmtPrice(product.retailPrice)}',
                     style: const TextStyle(
@@ -141,10 +148,31 @@ class ProductTile extends StatelessWidget {
                       color: AppTheme.priceRed,
                     ),
                   ),
+                  if (product.purchasePrice <= 0) ...[
+                    const SizedBox(height: 2),
+                    const Text(
+                      '进价未填',
+                      style: TextStyle(
+                          fontSize: AppTheme.fontCaption,
+                          color: AppTheme.primaryText),
+                    ),
+                  ],
                 ],
               ),
-              // 右：记一笔 + 删除（批量模式下隐藏）
+              // 右：星标 + 记一笔 + 删除（批量模式下隐藏）
               if (!_batchMode) ...[
+                if (onToggleFavorite != null)
+                  IconButton(
+                    tooltip: product.isFavorite ? '取消常用' : '设为常用',
+                    icon: Icon(
+                      product.isFavorite ? Icons.star : Icons.star_border,
+                      size: 22,
+                      color: product.isFavorite
+                          ? AppTheme.chartPeak
+                          : AppTheme.textSecondary,
+                    ),
+                    onPressed: onToggleFavorite,
+                  ),
                 if (onQuickSale != null)
                   IconButton(
                     tooltip: '记一笔销售',
@@ -166,30 +194,6 @@ class ProductTile extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-
-  /// 库存标签：负数红色加粗、0<≤3 橙色预警、其余灰色
-  Widget _stockLabel() {
-    final Color color;
-    final FontWeight weight;
-    final String text;
-    if (product.stock < 0) {
-      color = AppTheme.negativeStockRed;
-      weight = FontWeight.w700;
-      text = '库存 ${product.stock}（超卖）';
-    } else if (product.stock <= 3) {
-      color = AppTheme.lowStockOrange;
-      weight = FontWeight.w600;
-      text = '库存 ${product.stock}（快没了）';
-    } else {
-      color = AppTheme.textSecondary;
-      weight = FontWeight.normal;
-      text = '库存 ${product.stock}';
-    }
-    return Text(
-      text,
-      style: TextStyle(fontSize: 12, color: color, fontWeight: weight),
     );
   }
 }

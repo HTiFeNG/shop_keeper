@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FEFFFA</color>
+
+    <!-- 与 Flutter 端 AppTheme.background（暖米白）保持一致。
+         启动闪屏与 Flutter 窗口背后的底色都用它，避免启动瞬间闪白/闪黑。
+         注意：不要在 values-night 里改成深色——App 固定浅色主题。 -->
+    <color name="app_background">#FFF8F0</color>
 </resources>

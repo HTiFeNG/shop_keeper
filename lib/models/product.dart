@@ -2,8 +2,11 @@ import '../utils/format.dart';
 
 /// 商品数据模型
 ///
-/// 业务字段：名称、类别、品牌、条码、批发价、参考进价、零售价、库存、星标收藏。
+/// 业务字段：名称、类别、品牌、条码、批发价、参考进价、零售价、星标收藏。
 /// 编号（id）由应用自动生成，只读。
+///
+/// 注：[stock] 自 3.0.0 起不再对外使用（库存功能已移除），保留该字段仅为
+/// 不销毁用户已有的历史数据，值仍会随 JSON 备份原样读写。
 class Product {
   Product({
     required this.id,
@@ -26,7 +29,7 @@ class Product {
   double wholesalePrice; // 批发价
   double purchasePrice; // 参考进价（为 0 视为缺少进价）
   double retailPrice; // 零售价
-  int stock; // 库存（允许负数 = 超卖记录）
+  int stock; // 已弃用（3.0.0 起不再使用），保留以免丢失历史数据
   bool isFavorite; // 星标收藏（常用商品，记账时优先展示）
 
   Map<String, dynamic> toJson() => {
@@ -56,16 +59,18 @@ class Product {
       );
 
   /// CSV 表头（导入 / 导出共用同一格式；不加收藏列保持格式不变）
+  ///
+  /// 自 3.0.0 起不再导出「库存」列（库存功能已移除）。导入仍然兼容旧的
+  /// 9 列文件：第 9 列存在时会照常读入，只是不再写入商品。
   static const List<String> csvHeader = [
     '编号', '名称', '类别', '品牌', '条码',
-    '批发价', '参考进价', '零售价', '库存',
+    '批发价', '参考进价', '零售价',
   ];
 
   List<String> toCsvRow() => [
         id, name, category, brand, barcode,
         fmtPrice(wholesalePrice), fmtPrice(purchasePrice),
         fmtPrice(retailPrice),
-        stock.toString(),
       ];
 
   /// 从 CSV 行解析（列顺序需与 [csvHeader] 一致）
@@ -82,8 +87,8 @@ class Product {
       );
 
   static int _parseInt(String s) {
-    final v = double.tryParse(s.trim())?.round();
-    if (v == null || v < 0) return 0; // 导入的库存取整且 >= 0
-    return v;
+    final v = double.tryParse(s.trim());
+    if (v == null || !v.isFinite) return 0;
+    return v.round();
   }
 }

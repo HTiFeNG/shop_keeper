@@ -1,11 +1,9 @@
-import 'dart:math';
-
 import 'product.dart';
 
 /// 一行销售明细。
 ///
 /// [name] 是快照：不随后台商品改名联动（保留历史真实记录）。
-/// [productId] 仅用于库存联动与统计聚合；商品被删后悬空按 null 处理。
+/// [productId] 用于统计聚合；商品被删后悬空按 null 处理。
 class SaleItem {
   SaleItem({
     required this.id,
@@ -15,9 +13,10 @@ class SaleItem {
     this.totalPrice = 0,
     this.isManualMode = false,
     this.productId,
+    this.costPrice,
   });
 
-  String id; // 行唯一标识（时间戳 + 随机后缀）
+  String id; // 行唯一标识（微秒时间戳 + 进程内自增，避免同毫秒碰撞）
   String name; // 商品名快照
   int quantity; // 数量 >= 0
   double unitPrice; // 单价（选品时带入零售价）
@@ -25,14 +24,21 @@ class SaleItem {
   bool isManualMode; // true = 手动总价（解绑自动计算）
   String? productId; // 关联商品库 id；纯手输行为 null
 
-  /// 生成唯一行 id
-  static String newId() {
-    final ms = DateTime.now().millisecondsSinceEpoch;
-    final rand = Random().nextInt(0xFFFF);
-    return '$ms-${rand.toRadixString(16)}';
-  }
+  /// 售出时的参考进价快照（null = 当时未填进价）。
+  ///
+  /// 必须在成交时定格：否则以后修改商品进价会把**已经过去**的月份毛利
+  /// 一起改掉，历史报表无法复现。
+  double? costPrice;
 
-  /// 从商品库商品创建一行：带入名称 + 零售价，数量 1，自动联动
+  /// 生成唯一行 id：微秒时间戳 + 进程内自增序号。
+  ///
+  /// 旧实现是「毫秒 + 16 位随机数」，同一毫秒内建多行有碰撞风险；
+  /// 一旦碰撞，按 id 查找只会命中第一行，编辑/删除会改错行。
+  static int _seq = 0;
+  static String newId() =>
+      '${DateTime.now().microsecondsSinceEpoch}-${(_seq++).toRadixString(16)}';
+
+  /// 从商品库商品创建一行：带入名称 + 零售价 + 进价快照，数量 1
   factory SaleItem.fromProduct(Product p) => SaleItem(
         id: newId(),
         name: p.name,
@@ -41,6 +47,7 @@ class SaleItem {
         totalPrice: p.retailPrice,
         isManualMode: false,
         productId: p.id,
+        costPrice: p.purchasePrice > 0 ? p.purchasePrice : null,
       );
 
   SaleItem copy() => SaleItem(
@@ -51,6 +58,7 @@ class SaleItem {
         totalPrice: totalPrice,
         isManualMode: isManualMode,
         productId: productId,
+        costPrice: costPrice,
       );
 
   Map<String, dynamic> toJson() => {
@@ -61,6 +69,7 @@ class SaleItem {
         'totalPrice': totalPrice,
         'isManualMode': isManualMode,
         'productId': productId,
+        'costPrice': costPrice,
       };
 
   factory SaleItem.fromJson(Map<String, dynamic> json) => SaleItem(
@@ -71,6 +80,7 @@ class SaleItem {
         totalPrice: (json['totalPrice'] as num?)?.toDouble() ?? 0,
         isManualMode: json['isManualMode'] as bool? ?? false,
         productId: json['productId'] as String?,
+        costPrice: (json['costPrice'] as num?)?.toDouble(),
       );
 }
 

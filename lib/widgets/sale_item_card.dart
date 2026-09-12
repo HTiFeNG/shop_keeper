@@ -11,15 +11,15 @@ import '../utils/format.dart';
 /// - 数量 ± 步进（编辑数量恢复自动联动）；
 /// - 单价编辑（恢复自动联动）；
 /// - 总价默认自动 = 单价 × 数量；手动改写 → isManualMode=true 并显示解绑图标；
-/// - 关联商品行显示库存角标；
 /// - 删除由父层负责撤销 SnackBar。
+///
+/// 注：库存已随「库存功能」移除，本行不再显示库存角标。
 class SaleItemCard extends StatefulWidget {
   const SaleItemCard({
     super.key,
     required this.item,
     required this.onChanged,
     required this.onDelete,
-    this.stock,
     this.autofocusName = false,
   });
 
@@ -27,8 +27,6 @@ class SaleItemCard extends StatefulWidget {
   final ValueChanged<SaleItem> onChanged;
   final VoidCallback onDelete;
 
-  /// 关联商品的当前库存（null 表示纯手输行）
-  final int? stock;
   final bool autofocusName;
 
   @override
@@ -93,15 +91,25 @@ class _SaleItemCardState extends State<SaleItemCard> {
   SaleItem get _item => widget.item;
 
   /// 编辑数量 → 恢复自动联动
-  void _changeQuantity(int qty) {
+  ///
+  /// [syncText] = false 用于「用户正在输入框里打字」的场景：此时不要把
+  /// 文本框内容回写，否则清空输入框会立刻被写成 "0"，数字永远改不掉。
+  void _changeQuantity(int qty, {bool syncText = true}) {
     final q = qty < 0 ? 0 : qty;
-    _qtyCtrl.text = q.toString();
+    if (syncText) _qtyCtrl.text = q.toString();
     final next = _item.copy()
       ..quantity = q
       ..totalPrice = q * _item.unitPrice
       ..isManualMode = false;
     _totalCtrl.text = next.totalPrice == 0 ? '' : fmtPrice(next.totalPrice);
     widget.onChanged(next);
+  }
+
+  /// 数量输入框回调：清空/半成品输入时先不动数据，等用户敲出数字再算
+  void _onQtyInput(String raw) {
+    final q = int.tryParse(raw.trim());
+    if (q == null) return;
+    _changeQuantity(q, syncText: false);
   }
 
   /// 编辑单价 → 恢复自动联动并重算总价
@@ -139,7 +147,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 行1：名称 + 库存角标 + 删除
+          // 行1：名称 + 手动标记 + 删除
           Row(
             children: [
               Expanded(
@@ -160,7 +168,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
                   onChanged: _changeName,
                 ),
               ),
-              if (widget.stock != null) _stockBadge(widget.stock!),
+              if (it.isManualMode) _manualTag(),
               IconButton(
                 tooltip: '删除此行',
                 icon: const Icon(Icons.delete_outline,
@@ -194,7 +202,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(vertical: 6),
                   ),
-                  onChanged: (v) => _changeQuantity(int.tryParse(v) ?? 0),
+                  onChanged: _onQtyInput,
                 ),
               ),
               _stepBtn(Icons.add, () => _changeQuantity(it.quantity + 1)),
@@ -285,40 +293,33 @@ class _SaleItemCardState extends State<SaleItemCard> {
     );
   }
 
-  /// 库存角标：负数红色加粗、0<≤3 橙色、其余灰色
-  Widget _stockBadge(int stock) {
-    final Color color;
-    final FontWeight weight;
-    if (stock < 0) {
-      color = AppTheme.negativeStockRed;
-      weight = FontWeight.w700;
-    } else if (stock <= 3) {
-      color = AppTheme.lowStockOrange;
-      weight = FontWeight.w600;
-    } else {
-      color = AppTheme.textSecondary;
-      weight = FontWeight.normal;
-    }
+  /// 手动模式标签：让「总价被手动改过」这件事一眼可见（只靠一个 18px
+  /// 图标很难注意到，而那正是这行数字不再跟着数量变的原因）
+  Widget _manualTag() {
     return Padding(
       padding: const EdgeInsets.only(right: 4),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
+          color: AppTheme.priceRed.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(
-          '库存 $stock',
-          style: TextStyle(fontSize: 11, color: color, fontWeight: weight),
+        child: const Text(
+          '手动',
+          style: TextStyle(
+              fontSize: AppTheme.fontCaption,
+              color: AppTheme.priceRed,
+              fontWeight: FontWeight.w600),
         ),
       ),
     );
   }
 
   Widget _stepBtn(IconData icon, VoidCallback? onPressed) {
+    // 48dp：老花眼 + 手指粗的用户点 40dp 很容易点空
     return SizedBox(
-      width: 40,
-      height: 40,
+      width: 48,
+      height: 48,
       child: IconButton(
         padding: EdgeInsets.zero,
         style: IconButton.styleFrom(

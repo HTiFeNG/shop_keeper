@@ -3,6 +3,8 @@ library;
 
 /// 完整金额格式：`¥1,234.50`（千分位 + 两位小数）。
 String formatCurrency(num value) {
+  // 非有限数（Infinity / NaN）没有合理显示形式，旧实现会算出「¥In,fin.ty」
+  if (!value.isFinite) return '¥—';
   final negative = value < 0;
   final fixed = value.abs().toStringAsFixed(2);
   final intPart = fixed.substring(0, fixed.length - 3);
@@ -21,9 +23,14 @@ String fmtPrice(num value) =>
         ? value.toStringAsFixed(0)
         : value.toStringAsFixed(2);
 
-/// 解析价格文本：非法 / 负数归 0。
+/// 解析价格文本：非法 / 负数 / 非有限数 / 过大值一律归 0。
+///
+/// 必须挡住 `Infinity` / `NaN`：`double.tryParse` 会接受 "Infinity"、"1e400"
+/// 这类输入（它们不小于 0，能绕过旧判断），而 `jsonEncode` 遇到非有限数会
+/// 直接抛异常 —— 一旦这种值进了商品库，之后**所有商品改动都无法落盘**，
+/// 且因为持久化是发射后不管的，用户看不到任何报错。
 double parsePrice(String s) {
   final v = double.tryParse(s.trim());
-  if (v == null || v < 0) return 0;
+  if (v == null || !v.isFinite || v < 0 || v > 999999999) return 0;
   return v;
 }

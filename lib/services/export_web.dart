@@ -19,11 +19,14 @@ String _stamp() {
 }
 
 /// 触发浏览器下载一个文本文件。
-void downloadTextFile(String filename, String text) {
+///
+/// [mime] 要传对（备份是 JSON，CSV 是纯文本），否则浏览器会按错误类型处理。
+void downloadTextFile(String filename, String text,
+    {String mime = 'text/plain;charset=utf-8'}) {
   final bytes = utf8.encode(text);
   final blob = web.Blob(
     [bytes.toJS].toJS,
-    web.BlobPropertyBag(type: 'text/plain;charset=utf-8'),
+    web.BlobPropertyBag(type: mime),
   );
   final url = web.URL.createObjectURL(blob);
   final anchor = web.HTMLAnchorElement()
@@ -33,7 +36,11 @@ void downloadTextFile(String filename, String text) {
   web.document.body!.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  web.URL.revokeObjectURL(url);
+  // 不能紧跟 click() 立即释放：部分浏览器会因此直接取消下载，
+  // 表面现象就是「点了导出什么也没发生」。延迟到下载已被接手之后再释放。
+  Future<void>.delayed(const Duration(seconds: 1), () {
+    web.URL.revokeObjectURL(url);
+  });
 }
 
 /// 导出营业额 CSV：当日明细 + 月度汇总 两段式。
@@ -87,5 +94,6 @@ Future<void> exportProducts(String csv) async {
 
 /// 导出备份 JSON。
 Future<void> exportBackup(String jsonText) async {
-  downloadTextFile('店铺管家备份_${_stamp()}.json', jsonText);
+  downloadTextFile('店铺管家备份_${_stamp()}.json', jsonText,
+      mime: 'application/json;charset=utf-8');
 }

@@ -58,18 +58,44 @@ class CategorySidebar extends StatelessWidget {
             onTap: onAdd,
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: const Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.add, size: 18, color: AppTheme.primary),
                   SizedBox(height: 2),
                   Text('添加分类',
-                      style: TextStyle(fontSize: 11, color: AppTheme.primary)),
+                      style: TextStyle(
+                          fontSize: AppTheme.fontCaption,
+                          color: AppTheme.primaryText)),
                 ],
               ),
             ),
           ),
+          // 可见的「管理分类」入口（长按对中老年用户基本等于不存在）
+          if (selected != kCategoryAll && selected != kCategoryNone)
+            InkWell(
+              onTap: () => _showMenu(context, selected,
+                  index: categories.indexOf(selected),
+                  total: categories.length),
+              child: Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 48),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.tune, size: 18, color: AppTheme.primary),
+                    SizedBox(height: 2),
+                    Text('管理分类',
+                        style: TextStyle(
+                            fontSize: AppTheme.fontCaption,
+                            color: AppTheme.primaryText)),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -86,11 +112,14 @@ class CategorySidebar extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        constraints: const BoxConstraints(minHeight: 48),
         decoration: BoxDecoration(
-          color: isSel ? AppTheme.primary : Colors.transparent,
+          // 选中态换深橙：原来白字压 primary(#EF6C00) 只有 3.08:1
+          color: isSel ? AppTheme.totalGradientEnd : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
               name,
@@ -98,7 +127,7 @@ class CategorySidebar extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: AppTheme.fontCaption,
                 color: isSel
                     ? Colors.white
                     : (isUncat ? AppTheme.textSecondary : AppTheme.textPrimary),
@@ -109,8 +138,8 @@ class CategorySidebar extends StatelessWidget {
               const SizedBox(height: 2),
               Text('$count',
                   style: TextStyle(
-                      fontSize: 10,
-                      color: isSel ? Colors.white70 : AppTheme.textSecondary)),
+                      fontSize: AppTheme.fontCaption,
+                      color: isSel ? Colors.white : AppTheme.textSecondary)),
             ],
           ],
         ),

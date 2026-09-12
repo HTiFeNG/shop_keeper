@@ -38,7 +38,7 @@ class DateSelector extends StatelessWidget {
     final d = du.parseDateKey(dateKey);
     return Container(
       decoration: AppTheme.cardDecoration,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: Row(
         children: [
           IconButton(
@@ -51,7 +51,7 @@ class DateSelector extends StatelessWidget {
               borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               onTap: () => _pick(context),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [

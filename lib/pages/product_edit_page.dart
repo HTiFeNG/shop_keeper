@@ -56,8 +56,29 @@ class _ProductEditPageState extends State<ProductEditPage> {
       text: widget.product == null ? '' : _fmt(widget.product!.purchasePrice));
   late final _retailCtrl = TextEditingController(
       text: widget.product == null ? '' : _fmt(widget.product!.retailPrice));
-  late final _stockCtrl = TextEditingController(
-      text: widget.product == null ? '' : widget.product!.stock.toString());
+
+  /// 已成功保存（用于放行返回手势）
+  bool _saved = false;
+
+  /// 是否改过任何字段：返回时提醒，避免误划退出丢掉半天输入
+  bool get _hasChanges {
+    final p = widget.product;
+    if (p == null) {
+      return _nameCtrl.text.trim().isNotEmpty ||
+          _brandCtrl.text.trim().isNotEmpty ||
+          _barcodeCtrl.text.trim().isNotEmpty ||
+          _wholesaleCtrl.text.trim().isNotEmpty ||
+          _purchaseCtrl.text.trim().isNotEmpty ||
+          _retailCtrl.text.trim().isNotEmpty;
+    }
+    return _nameCtrl.text.trim() != p.name ||
+        _brandCtrl.text.trim() != p.brand ||
+        _barcodeCtrl.text.trim() != p.barcode ||
+        _category != (p.category.isEmpty ? null : p.category) ||
+        parsePrice(_wholesaleCtrl.text) != p.wholesalePrice ||
+        parsePrice(_purchaseCtrl.text) != p.purchasePrice ||
+        parsePrice(_retailCtrl.text) != p.retailPrice;
+  }
 
   @override
   void dispose() {
@@ -67,7 +88,6 @@ class _ProductEditPageState extends State<ProductEditPage> {
     _wholesaleCtrl.dispose();
     _purchaseCtrl.dispose();
     _retailCtrl.dispose();
-    _stockCtrl.dispose();
     super.dispose();
   }
 
@@ -78,8 +98,25 @@ class _ProductEditPageState extends State<ProductEditPage> {
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    // 库存：取整（允许负数，与销售超卖联动保持一致）
-    int stock() => double.tryParse(_stockCtrl.text.trim())?.round() ?? 0;
+    // 零售价为 0 会被记成「0 元卖出」，多半是漏填，先确认一次
+    if (parsePrice(_retailCtrl.text) <= 0) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('零售价是 0'),
+          content: const Text('零售价没填或填成了 0，卖出去会记成 0 元。仍要保存吗？'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('返回修改')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('仍然保存')),
+          ],
+        ),
+      );
+      if (go != true) return;
+    }
 
     final product = Product(
       id: widget.product?.id ?? store.nextId(),
@@ -91,21 +128,30 @@ class _ProductEditPageState extends State<ProductEditPage> {
       wholesalePrice: parsePrice(_wholesaleCtrl.text),
       purchasePrice: parsePrice(_purchaseCtrl.text),
       retailPrice: parsePrice(_retailCtrl.text),
-      stock: stock(),
+      // 库存已废弃：编辑旧商品时沿用原值，避免抹掉历史数据
+      stock: widget.product?.stock ?? 0,
     );
 
-    if (isEdit) {
-      store.updateProduct(product);
-    } else {
-      store.addProduct(product);
+    final ok =
+        isEdit ? store.updateProduct(product) : store.addProduct(product);
+    if (!ok) {
+      // 条码重复会让扫码永远只命中第一个商品，必须挡住
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('这个条码已经被别的商品用了，请换一个'),
+            duration: Duration(seconds: 4)));
+      return;
     }
 
+    _saved = true;
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         const SnackBar(
-            content: Text('商品信息已保存'), duration: Duration(seconds: 1)),
+            content: Text('商品信息已保存'), duration: Duration(seconds: 2)),
       );
     Navigator.of(context).pop();
   }
@@ -150,7 +196,31 @@ class _ProductEditPageState extends State<ProductEditPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      // 有未保存改动时拦一下返回（Android 返回键 / 侧滑手势）
+      canPop: _saved || !_hasChanges,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        // 先取好 Navigator，避免 await 之后再碰 context
+        final navigator = Navigator.of(context);
+        final leave = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('还没保存'),
+            content: const Text('这个商品的修改还没保存，确定离开吗？'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('继续编辑')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('放弃修改')),
+            ],
+          ),
+        );
+        if (leave == true) navigator.pop();
+      },
+      child: Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: Text(isEdit ? '编辑商品' : '新增商品'),
@@ -184,6 +254,8 @@ class _ProductEditPageState extends State<ProductEditPage> {
               TextFormField(
                 controller: _nameCtrl,
                 decoration: _deco(hint: '请输入商品名称'),
+                autofocus: !isEdit,
+                textInputAction: TextInputAction.next,
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? '请输入商品名称' : null,
               ),
@@ -242,16 +314,6 @@ class _ProductEditPageState extends State<ProductEditPage> {
               _label('零售价'),
               _priceField(_retailCtrl),
             ]),
-            const SizedBox(height: 12),
-            _card(children: [
-              _label('库存'),
-              TextFormField(
-                controller: _stockCtrl,
-                decoration: _deco(hint: '请输入库存数量'),
-                keyboardType:
-                    const TextInputType.numberWithOptions(signed: true),
-              ),
-            ]),
             if (isEdit) ...[
               const SizedBox(height: 12),
               _favoriteCard(),
@@ -259,6 +321,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
             const SizedBox(height: 32),
           ],
         ),
+      ),
       ),
     );
   }
@@ -274,17 +337,17 @@ class _ProductEditPageState extends State<ProductEditPage> {
         leading: Icon(
           p.isFavorite ? Icons.star : Icons.star_border,
           color: p.isFavorite
-              ? AppTheme.warningYellow
+              ? AppTheme.chartPeak
               : AppTheme.textSecondary,
           size: 28,
         ),
         title: const Text('常用商品（星标）',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
         subtitle: const Text('点亮后记账时优先展示，首页可一键添加',
-            style: TextStyle(fontSize: 12)),
+            style: TextStyle(fontSize: AppTheme.fontCaption)),
         trailing: Switch(
           value: p.isFavorite,
-          activeThumbColor: AppTheme.warningYellow,
+          activeThumbColor: AppTheme.chartPeak,
           onChanged: (_) {
             store.toggleFavorite(p.id);
             setState(() {}); // 刷新开关与图标
@@ -322,9 +385,19 @@ class _ProductEditPageState extends State<ProductEditPage> {
         decoration: _deco(hint: '0.00'),
         keyboardType:
             const TextInputType.numberWithOptions(decimal: true, signed: false),
+        textInputAction: TextInputAction.next,
         inputFormatters: [
           FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
         ],
+        // "1.2.3"、"12元" 这类输入会被 parsePrice 归 0；旧实现没有校验，
+        // 会静默存成 ¥0 还提示「已保存」。这里直接拦住。
+        validator: (v) {
+          final s = (v ?? '').trim();
+          if (s.isEmpty) return null; // 留空按 0 处理
+          final n = double.tryParse(s);
+          if (n == null || !n.isFinite || n < 0) return '请填数字金额，如 3.50';
+          return null;
+        },
       );
 
   // ---------------- 基础组件 ----------------

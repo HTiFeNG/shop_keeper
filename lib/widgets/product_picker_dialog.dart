@@ -86,6 +86,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
                   const Text('从商品库选择', style: AppTheme.sectionTitle),
                   const Spacer(),
                   IconButton(
+                    tooltip: '关闭',
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
                   ),
@@ -104,6 +105,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
+                          tooltip: '清空搜索',
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: () {
                             _searchCtrl.clear();
@@ -118,7 +120,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
             if (!searching) ...[
               const SizedBox(height: 8),
               SizedBox(
-                height: 40,
+                height: 48,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -153,7 +155,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
             padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Row(
               children: [
-                Icon(Icons.star, size: 16, color: AppTheme.warningYellow),
+                Icon(Icons.star, size: 16, color: AppTheme.chartPeak),
                 SizedBox(width: 4),
                 Text('常用商品',
                     style: TextStyle(
@@ -192,9 +194,12 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
         ),
       );
     }
-    return ListView(
+    // 用 builder 而不是一次建出所有行：几百个商品时旧写法每敲一个字
+    // 都要重建全部 ListTile，键盘输入会明显发卡。
+    return ListView.builder(
       padding: const EdgeInsets.only(bottom: 16),
-      children: [for (final p in list) _productTile(p)],
+      itemCount: list.length,
+      itemBuilder: (context, i) => _productTile(list[i]),
     );
   }
 
@@ -203,9 +208,17 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: ChoiceChip(
-        label: Text(c, style: TextStyle(fontSize: 13, color: sel ? Colors.white : AppTheme.textPrimary)),
+        // 选中态用浅橙底 + 深橙字：原来白字压主色只有 3.08:1，看不清
+        label: Text(
+          c,
+          style: TextStyle(
+            fontSize: AppTheme.fontCaption,
+            fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
+            color: sel ? AppTheme.primaryText : AppTheme.textPrimary,
+          ),
+        ),
         selected: sel,
-        selectedColor: AppTheme.primary,
+        selectedColor: AppTheme.orangeSurface,
         backgroundColor: Colors.white,
         onSelected: (_) => setState(() => _category = c),
       ),
@@ -224,7 +237,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
         ),
         child: Icon(
           p.isFavorite ? Icons.star : Icons.inventory_2_outlined,
-          color: p.isFavorite ? AppTheme.warningYellow : AppTheme.primary,
+          color: p.isFavorite ? AppTheme.chartPeak : AppTheme.primary,
           size: 22,
         ),
       ),
@@ -237,14 +250,12 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
       subtitle: Text(
         [
           if (p.category.isNotEmpty && p.category != kCategoryNone) p.category,
-          '库存 ${p.stock}',
+          if (p.brand.isNotEmpty) p.brand,
+          // 库存已不再使用；改为提示「进价未填」，因为它会让毛利漏算
+          if (p.purchasePrice <= 0) '进价未填',
         ].join(' · '),
-        style: TextStyle(
-          fontSize: 12,
-          color: p.stock < 0
-              ? AppTheme.negativeStockRed
-              : (p.stock <= 3 ? AppTheme.lowStockOrange : AppTheme.textSecondary),
-        ),
+        style: const TextStyle(
+            fontSize: AppTheme.fontCaption, color: AppTheme.textSecondary),
       ),
       trailing: Text(
         '¥${fmtPrice(p.retailPrice)}',

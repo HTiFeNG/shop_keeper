@@ -14,14 +14,12 @@ class SaleItemTableRow extends StatefulWidget {
     required this.item,
     required this.onChanged,
     required this.onDelete,
-    this.stock,
   });
 
   final int index; // 行号（1 起）
   final SaleItem item;
   final ValueChanged<SaleItem> onChanged;
   final VoidCallback onDelete;
-  final int? stock; // 关联商品库存（null = 手输行）
 
   @override
   State<SaleItemTableRow> createState() => _SaleItemTableRowState();
@@ -81,14 +79,21 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
     super.dispose();
   }
 
-  void _changeQuantity(int qty) {
+  void _changeQuantity(int qty, {bool syncText = true}) {
     final q = qty < 0 ? 0 : qty;
-    _qtyCtrl.text = q.toString();
+    // 用户正在输入时不要回写文本框，否则清空会被立刻写成 "0"
+    if (syncText) _qtyCtrl.text = q.toString();
     final next = widget.item.copy()
       ..quantity = q
       ..totalPrice = q * widget.item.unitPrice
       ..isManualMode = false;
     widget.onChanged(next);
+  }
+
+  void _onQtyInput(String raw) {
+    final q = int.tryParse(raw.trim());
+    if (q == null) return;
+    _changeQuantity(q, syncText: false);
   }
 
   void _changeUnitPrice(String raw) {
@@ -122,7 +127,7 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
             child: Text('${widget.index}',
                 style: AppTheme.caption, textAlign: TextAlign.center),
           ),
-          // 名称 + 库存
+          // 名称
           Expanded(
             flex: 4,
             child: Row(
@@ -138,11 +143,6 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
                     },
                   ),
                 ),
-                if (widget.stock != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: _stockBadge(widget.stock!),
-                  ),
               ],
             ),
           ),
@@ -162,7 +162,7 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
                     align: TextAlign.center,
                     keyboardType: TextInputType.number,
                     formatters: [FilteringTextInputFormatter.digitsOnly],
-                    onChanged: (v) => _changeQuantity(int.tryParse(v) ?? 0),
+                    onChanged: _onQtyInput,
                   ),
                 ),
                 _stepBtn(Icons.add, () => _changeQuantity(it.quantity + 1)),
@@ -188,10 +188,18 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Icon(
-                  it.isManualMode ? Icons.link_off : Icons.link,
-                  size: 16,
-                  color: it.isManualMode ? AppTheme.priceRed : AppTheme.success,
+                Tooltip(
+                  message: it.isManualMode
+                      ? '手动模式：总价已手动改过，不再跟随数量'
+                      : '联动：总价 = 单价 × 数量',
+                  child: Icon(
+                    it.isManualMode ? Icons.link_off : Icons.link,
+                    size: 18,
+                    // 纯图标对读屏软件是无意义的，补上语义标签
+                    semanticLabel: it.isManualMode ? '手动总价' : '自动总价',
+                    color:
+                        it.isManualMode ? AppTheme.priceRed : AppTheme.success,
+                  ),
                 ),
                 const SizedBox(width: 4),
                 SizedBox(
@@ -233,32 +241,6 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
     );
   }
 
-  Widget _stockBadge(int stock) {
-    final Color color;
-    if (stock < 0) {
-      color = AppTheme.negativeStockRed;
-    } else if (stock <= 3) {
-      color = AppTheme.lowStockOrange;
-    } else {
-      color = AppTheme.textSecondary;
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        '库存$stock',
-        style: TextStyle(
-          fontSize: 11,
-          color: color,
-          fontWeight: stock <= 3 ? FontWeight.w700 : FontWeight.normal,
-        ),
-      ),
-    );
-  }
-
   Widget _cellField({
     required TextEditingController ctrl,
     required FocusNode focus,
@@ -290,9 +272,10 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
   }
 
   Widget _stepBtn(IconData icon, VoidCallback? onPressed) {
+    // 48dp：与主题承诺的触控区一致（原为 34dp，很容易点空/点错）
     return SizedBox(
-      width: 34,
-      height: 34,
+      width: 48,
+      height: 48,
       child: IconButton(
         padding: EdgeInsets.zero,
         style: IconButton.styleFrom(
@@ -312,13 +295,11 @@ class SaleItemTable extends StatelessWidget {
   const SaleItemTable({
     super.key,
     required this.items,
-    required this.stockOf,
     required this.onChanged,
     required this.onDelete,
   });
 
   final List<SaleItem> items;
-  final int? Function(String? productId) stockOf;
   final ValueChanged<SaleItem> onChanged;
   final ValueChanged<SaleItem> onDelete;
 
@@ -348,7 +329,6 @@ class SaleItemTable extends StatelessWidget {
               key: ValueKey(items[i].id),
               index: i + 1,
               item: items[i],
-              stock: stockOf(items[i].productId),
               onChanged: onChanged,
               onDelete: () => onDelete(items[i]),
             ),

@@ -30,7 +30,8 @@ class StatCard extends StatelessWidget {
         children: [
           Text(label,
               style: const TextStyle(
-                  fontSize: 12, color: AppTheme.textSecondary)),
+                  fontSize: AppTheme.fontCaption,
+                  color: AppTheme.textSecondary)),
           const SizedBox(height: 6),
           Text(
             value,
@@ -46,7 +47,8 @@ class StatCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text(subLabel!,
                 style: const TextStyle(
-                    fontSize: 11, color: AppTheme.textSecondary)),
+                    fontSize: AppTheme.fontCaption,
+                    color: AppTheme.textSecondary)),
           ],
         ],
       ),

@@ -36,63 +36,85 @@ class CategoryChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 44,
+      // 48dp：Chip 自身被外部高度压到 36dp 时，点起来很费劲
+      height: 48,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         children: [
-          _chip(context, kCategoryAll, fixed: true),
-          for (var i = 0; i < categories.length; i++)
-            _chip(context, categories[i], index: i, total: categories.length),
+          _chip(context, kCategoryAll),
+          for (final c in categories) _chip(context, c),
           if (showUncategorized)
-            _chip(context, kCategoryNone, fixed: true, count: uncategorizedCount),
+            _chip(context, kCategoryNone, count: uncategorizedCount),
           // 添加分类
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             child: ActionChip(
               avatar: const Icon(Icons.add, size: 16, color: AppTheme.primary),
               label: const Text('分类',
-                  style: TextStyle(fontSize: 13, color: AppTheme.primary)),
+                  style: TextStyle(
+                      fontSize: AppTheme.fontCaption,
+                      color: AppTheme.primaryText)),
               backgroundColor: Colors.white,
               shape: StadiumBorder(
                   side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.4))),
               onPressed: onAdd,
             ),
           ),
+          // 可见的「管理分类」入口。
+          // 改名/排序/删除原先只能长按触发，而且长按还会和横滑手势打架，
+          // 对中老年用户来说这个功能等于不存在。
+          if (!_isFixed(selected))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: ActionChip(
+                avatar:
+                    const Icon(Icons.tune, size: 16, color: AppTheme.primary),
+                label: const Text('管理',
+                    style: TextStyle(
+                        fontSize: AppTheme.fontCaption,
+                        color: AppTheme.primaryText)),
+                backgroundColor: Colors.white,
+                shape: StadiumBorder(
+                    side: BorderSide(
+                        color: AppTheme.primary.withValues(alpha: 0.4))),
+                onPressed: () => _showMenu(context, selected,
+                    index: categories.indexOf(selected),
+                    total: categories.length),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _chip(BuildContext context, String name,
-      {bool fixed = false, int? count, int index = 0, int total = 0}) {
+  static bool _isFixed(String name) =>
+      name == kCategoryAll || name == kCategoryNone;
+
+  Widget _chip(BuildContext context, String name, {int? count}) {
     final sel = name == selected;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      child: GestureDetector(
-        onLongPress: fixed
-            ? null
-            : () => _showMenu(context, name, index: index, total: total),
-        child: ChoiceChip(
+      child: ChoiceChip(
           label: Text(
             count != null && count > 0 ? '$name（$count）' : name,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: AppTheme.fontCaption,
               fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
-              color: sel ? Colors.white : AppTheme.textPrimary,
+              // 选中态改为「浅橙底 + 深橙字」：原来白字压主色只有 3.08:1
+              color: sel ? AppTheme.primaryText : AppTheme.textPrimary,
             ),
           ),
           selected: sel,
-          selectedColor: AppTheme.primary,
+          selectedColor: AppTheme.orangeSurface,
           backgroundColor: Colors.white,
-          showCheckmark: false,
+          showCheckmark: sel,
           onSelected: (_) => onSelect(name),
         ),
-      ),
     );
   }
 
-  /// 长按分类 → 上移 / 下移 / 编辑 / 删除菜单
+  /// 分类管理菜单（上移 / 下移 / 编辑 / 删除）
   void _showMenu(BuildContext context, String name,
       {required int index, required int total}) {
     showModalBottomSheet<void>(
