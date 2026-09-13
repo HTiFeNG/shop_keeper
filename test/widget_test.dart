@@ -528,5 +528,91 @@ void main() {
       // 布局溢出等异常若发生，会在这里暴露
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('当日合计固定在列表上方：明细很多并滚动后仍然可见', (tester) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      // 造 12 行明细，确保列表一定需要滚动
+      final today = du.todayKey();
+      final items = [
+        for (var i = 0; i < 12; i++)
+          {
+            'id': 'r$i',
+            'name': '商品$i',
+            'quantity': 1,
+            'unitPrice': 2,
+            'totalPrice': 2,
+            'isManualMode': false,
+            'productId': null,
+          },
+      ];
+      SharedPreferences.setMockInitialValues({
+        'sk_seeded': true, // 跳过首启询问弹窗
+        'sk_sales': jsonEncode({
+          today: {'date': today, 'items': items},
+        }),
+      });
+
+      await tester.pumpWidget(const ShopKeeperApp());
+      await tester.pumpAndSettle();
+
+      // 首启询问弹窗：load() 是异步的，首帧回调时 seeded 可能还是 false，
+      // 所以即便预置了 sk_seeded 也要兜底关掉它
+      if (find.text('从空开始').evaluate().isNotEmpty) {
+        await tester.tap(find.text('从空开始'));
+        await tester.pumpAndSettle();
+      }
+
+      // 12 行 × 2 元 = 24 元，只应出现在悬浮合计条里
+      final totalText = formatCurrency(24);
+      expect(find.text(totalText), findsOneWidget);
+
+      // 向上滚动明细列表
+      await tester.drag(find.text('商品0'), const Offset(0, -400));
+      await tester.pumpAndSettle();
+
+      // 合计条在列表之外固定，滚动后仍必须可见
+      expect(find.text(totalText), findsOneWidget,
+          reason: '当日合计应固定在列表上方，不应随明细滚动消失');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('商品页不再显示「进价未填」提示', (tester) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      SharedPreferences.setMockInitialValues({
+        'sk_seeded': true,
+        'sk_products': jsonEncode([
+          {
+            'id': 'SP0001',
+            'name': '没填进价的商品',
+            'barcode': '',
+            'wholesalePrice': 0,
+            'purchasePrice': 0, // 进价为空 —— 旧版这里会标注「进价未填」
+            'retailPrice': 5,
+            'isFavorite': false,
+          }
+        ]),
+      });
+
+      await tester.pumpWidget(const ShopKeeperApp());
+      await tester.pumpAndSettle();
+
+      if (find.text('从空开始').evaluate().isNotEmpty) {
+        await tester.tap(find.text('从空开始'));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(find.byIcon(Icons.inventory_2_outlined));
+      await tester.pumpAndSettle();
+
+      expect(find.text('没填进价的商品'), findsOneWidget);
+      expect(find.text('进价未填'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

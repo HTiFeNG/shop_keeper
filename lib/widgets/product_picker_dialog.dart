@@ -251,8 +251,6 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
         [
           if (p.category.isNotEmpty && p.category != kCategoryNone) p.category,
           if (p.brand.isNotEmpty) p.brand,
-          // 库存已不再使用；改为提示「进价未填」，因为它会让毛利漏算
-          if (p.purchasePrice <= 0) '进价未填',
         ].join(' · '),
         style: const TextStyle(
             fontSize: AppTheme.fontCaption, color: AppTheme.textSecondary),

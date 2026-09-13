@@ -179,14 +179,18 @@ class _SaleItemCardState extends State<SaleItemCard> {
           ),
           const SizedBox(height: 2),
           // 行2：数量步进 + 单价
+          //
+          // 单价输入框用 Expanded 吃掉剩余宽度，而不是写死 88px —— 固定宽度在
+          // 窄屏（360dp，也就是绝大多数手机）上会溢出：把步进按钮放大到 48dp
+          // 后这一行正好超出 3px，debug 下会出现黄黑溢出条纹。
           Row(
             children: [
               const Text('数量', style: AppTheme.caption),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _stepBtn(Icons.remove,
                   it.quantity <= 0 ? null : () => _changeQuantity(it.quantity - 1)),
               SizedBox(
-                width: 44,
+                width: 40,
                 child: TextField(
                   controller: _qtyCtrl,
                   focusNode: _qtyFocus,
@@ -206,11 +210,10 @@ class _SaleItemCardState extends State<SaleItemCard> {
                 ),
               ),
               _stepBtn(Icons.add, () => _changeQuantity(it.quantity + 1)),
-              const Spacer(),
+              const SizedBox(width: 12),
               const Text('单价', style: AppTheme.caption),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 88,
+              const SizedBox(width: 6),
+              Expanded(
                 child: TextField(
                   controller: _unitCtrl,
                   textAlign: TextAlign.end,
@@ -233,7 +236,6 @@ class _SaleItemCardState extends State<SaleItemCard> {
                   onChanged: _changeUnitPrice,
                 ),
               ),
-              const SizedBox(width: 14),
             ],
           ),
           const SizedBox(height: 2),

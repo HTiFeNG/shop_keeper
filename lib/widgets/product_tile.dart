@@ -9,7 +9,6 @@ import '../utils/format.dart';
 /// - 点击整行 → 编辑；垃圾桶 → 删除（带确认）；
 /// - 「记一笔」→ 首页预填一行（store.requestPrefill）；
 /// - ★ → 切换常用商品（直接影响首页一键记账栏）；
-/// - 未填参考进价 → 提示「进价未填」，因为毛利会漏算这一项；
 /// - 批量模式（onSelectToggle != null）：左侧复选框，整行切换选中。
 ///
 /// 注：库存已随「库存功能」移除，本列表不再显示库存。
@@ -136,7 +135,7 @@ class ProductTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // 中：零售价（+ 缺进价提示，因为那会让毛利漏算）
+              // 中：零售价
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -148,15 +147,6 @@ class ProductTile extends StatelessWidget {
                       color: AppTheme.priceRed,
                     ),
                   ),
-                  if (product.purchasePrice <= 0) ...[
-                    const SizedBox(height: 2),
-                    const Text(
-                      '进价未填',
-                      style: TextStyle(
-                          fontSize: AppTheme.fontCaption,
-                          color: AppTheme.primaryText),
-                    ),
-                  ],
                 ],
               ),
               // 右：星标 + 记一笔 + 删除（批量模式下隐藏）

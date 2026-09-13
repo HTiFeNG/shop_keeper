@@ -2,7 +2,7 @@ name: shop_keeper
 description: "店铺管家 —— 商品管理 × 营业额记录，一站式守店工具（Android + Web）。"
 publish_to: 'none' # 仅本地使用，不发布到 pub.dev
 
-version: 3.0.0+5
+version: 3.0.1+6
 
 environment:
   sdk: ^3.13.0

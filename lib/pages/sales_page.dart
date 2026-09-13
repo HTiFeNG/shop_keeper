@@ -350,14 +350,19 @@ class _SalesPageState extends State<SalesPage>
     final qty = items.fold(0, (s, e) => s + e.quantity);
     return Column(
       children: [
+        // 悬浮的当日合计：固定在列表上方，不随滚动消失 ——
+        // 明细多到需要上下翻时也始终能看到当天金额。
+        // 日期一并写在条里，所以往下翻时仍知道看的是哪一天。
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+          child: _floatingTotalBar(total, qty, items.length),
+        ),
         Expanded(
           child: ListView(
-            // 纵向留白从 12 收到 8：把空间还给明细行本身
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
             children: [
               DateSelector(dateKey: _date, onChanged: _changeDate),
               const SizedBox(height: 8),
-              _dailyTotalCard(total, qty, items.length),
               ..._warnings(),
               const SizedBox(height: 8),
               if (items.isEmpty)
@@ -532,11 +537,15 @@ class _SalesPageState extends State<SalesPage>
     );
   }
 
-  /// 日合计大字卡片
+  /// 悬浮的当日合计条
   ///
-  /// 渐变改用更深的两个橙（原 #FB8C00→#EF6C00 上白字只有 2.37:1，
-  /// 全 App 最该一眼看清的数字反而最糊）；统计合并成一行也比原来矮一截。
-  Widget _dailyTotalCard(double total, int qty, int kinds) {
+  /// 取代原先放在列表里的「日合计大字卡片」：那张卡会随列表一起滚走，
+  /// 明细一多就看不到当天金额。这条固定在列表上方，而且更矮
+  /// （约 54dp，原卡片约 78dp），等于把高度还给了明细行。
+  ///
+  /// 渐变用较深的两个橙：白字在 #BF360C 上是 5.6:1，
+  /// 原来 #FB8C00 只有 2.37:1（全 App 最该看清的数字反而最糊）。
+  Widget _floatingTotalBar(double total, int qty, int kinds) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -546,37 +555,53 @@ class _SalesPageState extends State<SalesPage>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
+        // 阴影偏下，视觉上「浮」在下方列表之上
         boxShadow: [
           BoxShadow(
-            color: AppTheme.totalGradientEnd.withValues(alpha: 0.3),
-            blurRadius: 10,
+            color: AppTheme.totalGradientEnd.withValues(alpha: 0.32),
+            blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          Expanded(
+          // 左侧说明可压缩：金额很大（¥1,234.00）或系统字号调大时，
+          // 让说明先省略，而不是把这一行挤到溢出。
+          Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text('${du.dayLabel(_date)} 合计',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 14, color: Colors.white)),
                 const SizedBox(height: 2),
-                Text(
-                  formatCurrency(total),
-                  style: const TextStyle(
-                    fontSize: AppTheme.fontBigTotal,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
+                Text('$kinds 种 · $qty 件',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, color: Colors.white)),
               ],
             ),
           ),
-          Text('$kinds 种 · $qty 件',
-              style: const TextStyle(fontSize: 14, color: Colors.white)),
+          const SizedBox(width: 12),
+          // 金额优先保证完整可见；极端情况下按比例缩小而不是截断
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                formatCurrency(total),
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
