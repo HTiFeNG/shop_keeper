@@ -422,7 +422,9 @@ class StoreService extends ChangeNotifier {
   /// 手动改过总价的行（抹零 / 改价）合并时，把那份总价理解为**该行的实际
   /// 单价**再按新数量等比放大：1 件手动 ¥5 → 再卖 1 件 = 2 件 ¥10。
   /// 旧实现直接沿用原总价，会出现「件数 +1、营业额却一分没涨」的漏记。
-  void recordSaleFromProduct(String date, Product product) {
+  ///
+  /// 返回被新增（或合并进去）的那一行 id，供 UI 滚动定位到它。
+  String recordSaleFromProduct(String date, Product product) {
     final record = sales[date];
     if (record != null) {
       final idx = record.items.indexWhere((e) => e.productId == product.id);
@@ -435,10 +437,12 @@ class StoreService extends ChangeNotifier {
         upsertSaleItem(date, it.copy()
           ..quantity = q
           ..totalPrice = total);
-        return;
+        return it.id;
       }
     }
-    upsertSaleItem(date, SaleItem.fromProduct(product));
+    final item = SaleItem.fromProduct(product);
+    upsertSaleItem(date, item);
+    return item.id;
   }
 
   /// 删除一行销售明细。找不到返回 null。

@@ -55,6 +55,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
       list = list
           .where((p) =>
               p.name.toLowerCase().contains(q) ||
+              p.brand.toLowerCase().contains(q) ||
               p.barcode.toLowerCase().contains(q))
           .toList();
     }
@@ -100,7 +101,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
                 controller: _searchCtrl,
                 autofocus: true,
                 decoration: InputDecoration(
-                  hintText: '搜索商品名或条码',
+                  hintText: '搜索商品名、品牌或条码',
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: _query.isEmpty
                       ? null
@@ -226,7 +227,12 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
   }
 
   Widget _productTile(Product p) {
-    return ListTile(
+    // 面板外层是带底色的 Container，它会挡住 ListTile 的水波纹（Flutter 会
+    // 报「ListTile background color or ink splashes may be invisible」，
+    // 表现为点选商品完全没有点按反馈）。官方建议就是给 ListTile 垫一层 Material。
+    return Material(
+      type: MaterialType.transparency,
+      child: ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       leading: Container(
         width: 42,
@@ -264,6 +270,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
         ),
       ),
       onTap: () => Navigator.pop(context, p),
+      ),
     );
   }
 }

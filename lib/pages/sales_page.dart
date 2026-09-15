@@ -60,6 +60,37 @@ class _SalesPageState extends State<SalesPage>
   /// 删除行「已删除」SnackBar 的兜底关闭定时器（部分机型带 action 时不自动消失）
   Timer? _snackTimer;
 
+  /// 明细列表滚动控制器（新增一行后要把视图滚到它那里）
+  final ScrollController _listCtrl = ScrollController();
+
+  /// 每行一个 GlobalKey，用于记账后定位到对应行。
+  ///
+  /// 明细列表刻意用「Column + SingleChildScrollView」而不是 ListView：
+  /// ListView 是懒构建的，视口外的行根本不在 widget 树里，
+  /// `Scrollable.ensureVisible` 拿不到 context —— 而新增的行在末尾，
+  /// 恰恰经常就在视口外，定位会失败。
+  final Map<String, GlobalKey> _rowKeys = {};
+
+  GlobalKey _rowKey(String itemId) =>
+      _rowKeys.putIfAbsent(itemId, () => GlobalKey());
+
+  /// 记账后把视图滚到刚新增（或合并进去）的那一行
+  Future<void> _scrollToRow(String? itemId) async {
+    if (itemId == null) return;
+    // 等这一帧把新行布局出来，否则取不到 context
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final ctx = _rowKeys[itemId]?.currentContext;
+    // ctx 自己的 mounted 检查（跨 await 之后不能复用 State.mounted 来保它）
+    if (ctx == null || !ctx.mounted) return;
+    await Scrollable.ensureVisible(
+      ctx,
+      alignment: 0.5, // 居中显示，上下都留一点上下文
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +109,7 @@ class _SalesPageState extends State<SalesPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _snackTimer?.cancel();
+    _listCtrl.dispose();
     store.salePrefill.removeListener(_onPrefill);
     _tabCtrl.dispose();
     super.dispose();
@@ -142,7 +174,8 @@ class _SalesPageState extends State<SalesPage>
       _followToday = true;
       _tabCtrl.index = 0;
     });
-    store.recordSaleFromProduct(_date, product);
+    final id = store.recordSaleFromProduct(_date, product);
+    unawaited(_scrollToRow(id));
     _toast('已记一笔「${product.name}」，可继续调整数量');
   }
 
@@ -156,10 +189,12 @@ class _SalesPageState extends State<SalesPage>
     });
   }
 
-  /// 所有「记账」入口都先对一次日期，再记到当前这一天
+  /// 所有「记账」入口都先对一次日期，再记到当前这一天，
+  /// 最后把视图滚到刚变动的那一行。
   void _record(Product p) {
     _syncToday();
-    store.recordSaleFromProduct(_date, p);
+    final id = store.recordSaleFromProduct(_date, p);
+    unawaited(_scrollToRow(id));
   }
 
   Future<void> _addFromLibrary() async {
@@ -185,7 +220,9 @@ class _SalesPageState extends State<SalesPage>
 
   void _addManualRow() {
     _syncToday();
-    store.upsertSaleItem(_date, SaleItem(id: SaleItem.newId(), quantity: 1));
+    final item = SaleItem(id: SaleItem.newId(), quantity: 1);
+    store.upsertSaleItem(_date, item);
+    unawaited(_scrollToRow(item.id));
   }
 
   void _updateItem(SaleItem item) {
@@ -200,6 +237,7 @@ class _SalesPageState extends State<SalesPage>
   void _deleteItem(SaleItem item) {
     final date = _date;
     store.deleteSaleItem(date, item.id);
+    _rowKeys.remove(item.id);
     _snackTimer?.cancel();
     final messenger = ScaffoldMessenger.of(context);
     messenger
@@ -358,30 +396,38 @@ class _SalesPageState extends State<SalesPage>
           child: _floatingTotalBar(total, qty, items.length),
         ),
         Expanded(
-          child: ListView(
+          // 用 SingleChildScrollView + Column（非懒构建）而不是 ListView：
+          // 明细行会持有 GlobalKey，懒构建时视口外的行不在树里，
+          // 新增到末尾的行就定位不到（详见 _rowKeys 的说明）。
+          child: SingleChildScrollView(
+            controller: _listCtrl,
             padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-            children: [
-              DateSelector(dateKey: _date, onChanged: _changeDate),
-              const SizedBox(height: 8),
-              ..._warnings(),
-              const SizedBox(height: 8),
-              if (items.isEmpty)
-                _emptyState()
-              else if (wide)
-                SaleItemTable(
-                  items: items,
-                  onChanged: _updateItem,
-                  onDelete: _deleteItem,
-                )
-              else
-                for (final item in items)
-                  SaleItemCard(
-                    key: ValueKey(item.id),
-                    item: item,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DateSelector(dateKey: _date, onChanged: _changeDate),
+                const SizedBox(height: 8),
+                ..._warnings(),
+                const SizedBox(height: 8),
+                if (items.isEmpty)
+                  _emptyState()
+                else if (wide)
+                  SaleItemTable(
+                    items: items,
+                    keyOf: _rowKey,
                     onChanged: _updateItem,
-                    onDelete: () => _deleteItem(item),
-                  ),
-            ],
+                    onDelete: _deleteItem,
+                  )
+                else
+                  for (final item in items)
+                    SaleItemCard(
+                      key: _rowKey(item.id),
+                      item: item,
+                      onChanged: _updateItem,
+                      onDelete: () => _deleteItem(item),
+                    ),
+              ],
+            ),
           ),
         ),
         // 底部：常用/常卖快捷条 + 添加按钮

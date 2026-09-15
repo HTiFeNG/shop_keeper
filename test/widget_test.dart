@@ -17,6 +17,7 @@ import 'package:shop_keeper/services/store_service.dart';
 import 'package:shop_keeper/utils/csv_codec.dart';
 import 'package:shop_keeper/utils/date_utils.dart' as du;
 import 'package:shop_keeper/utils/format.dart';
+import 'package:shop_keeper/widgets/sale_item_card.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -612,6 +613,126 @@ void main() {
 
       expect(find.text('没填进价的商品'), findsOneWidget);
       expect(find.text('进价未填'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('商品页搜索支持按品牌匹配', (tester) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      SharedPreferences.setMockInitialValues({
+        'sk_seeded': true,
+        'sk_products': jsonEncode([
+          {
+            'id': 'SP0001',
+            'name': '矿泉水',
+            'brand': '农夫山泉',
+            'barcode': '6901',
+            'wholesalePrice': 0,
+            'purchasePrice': 1,
+            'retailPrice': 2,
+            'isFavorite': false,
+          },
+          {
+            'id': 'SP0002',
+            'name': '苏打水',
+            'brand': '娃哈哈',
+            'barcode': '6902',
+            'wholesalePrice': 0,
+            'purchasePrice': 1,
+            'retailPrice': 3,
+            'isFavorite': false,
+          },
+        ]),
+      });
+
+      await tester.pumpWidget(const ShopKeeperApp());
+      await tester.pumpAndSettle();
+      if (find.text('从空开始').evaluate().isNotEmpty) {
+        await tester.tap(find.text('从空开始'));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(find.byIcon(Icons.inventory_2_outlined));
+      await tester.pumpAndSettle();
+      expect(find.text('矿泉水'), findsOneWidget);
+      expect(find.text('苏打水'), findsOneWidget);
+
+      // 输入的是品牌名，商品名里并不含「农夫」二字
+      await tester.enterText(find.byType(TextField).first, '农夫');
+      await tester.pumpAndSettle();
+
+      expect(find.text('矿泉水'), findsOneWidget,
+          reason: '应按品牌「农夫山泉」匹配到该商品');
+      expect(find.text('苏打水'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('记账后视图自动滚到新增的那一行', (tester) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      // 商品0..商品23；其中 商品1..商品8 当天已有明细（8 行，远超一屏）
+      final products = [
+        for (var i = 0; i < 24; i++)
+          {
+            'id': 'SP${(i + 1).toString().padLeft(4, '0')}',
+            'name': '商品$i',
+            'barcode': '',
+            'wholesalePrice': 0,
+            'purchasePrice': 1,
+            'retailPrice': 2,
+            'isFavorite': false,
+          },
+      ];
+      final today = du.todayKey();
+      final existing = [
+        for (var i = 1; i <= 8; i++)
+          {
+            'id': 'r$i',
+            'name': '商品$i',
+            'quantity': 1,
+            'unitPrice': 2,
+            'totalPrice': 2,
+            'isManualMode': false,
+            'productId': 'SP${(i + 1).toString().padLeft(4, '0')}',
+          },
+      ];
+      SharedPreferences.setMockInitialValues({
+        'sk_seeded': true,
+        'sk_products': jsonEncode(products),
+        'sk_sales': jsonEncode({
+          today: {'date': today, 'items': existing},
+        }),
+      });
+
+      await tester.pumpWidget(const ShopKeeperApp());
+      await tester.pumpAndSettle();
+      if (find.text('从空开始').evaluate().isNotEmpty) {
+        await tester.tap(find.text('从空开始'));
+        await tester.pumpAndSettle();
+      }
+
+      // 商品0 当天还没有明细 → 添加它会追加到明细列表末尾（视口之外）
+      await tester.tap(find.text('添加商品'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('商品0').last);
+      await tester.pumpAndSettle();
+
+      final row = find.ancestor(
+        of: find.text('商品0'),
+        matching: find.byType(SaleItemCard),
+      );
+      expect(row, findsOneWidget);
+
+      final screenH =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final rect = tester.getRect(row);
+      expect(rect.top, lessThan(screenH),
+          reason: '新增在列表末尾的行应被自动滚动到可视区域内');
+      expect(rect.bottom, greaterThan(0));
       expect(tester.takeException(), isNull);
     });
   });

@@ -332,7 +332,10 @@ class _ProductEditPageState extends State<ProductEditPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: AppTheme.cardDecoration,
-      child: ListTile(
+      // 卡片底色同样会挡住 ListTile 的水波纹，按官方建议垫一层透明 Material
+      child: Material(
+        type: MaterialType.transparency,
+        child: ListTile(
         contentPadding: EdgeInsets.zero,
         leading: Icon(
           p.isFavorite ? Icons.star : Icons.star_border,
@@ -357,6 +360,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
           store.toggleFavorite(p.id);
           setState(() {});
         },
+        ),
       ),
     );
   }

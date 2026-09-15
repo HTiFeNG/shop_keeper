@@ -297,11 +297,15 @@ class SaleItemTable extends StatelessWidget {
     required this.items,
     required this.onChanged,
     required this.onDelete,
+    this.keyOf,
   });
 
   final List<SaleItem> items;
   final ValueChanged<SaleItem> onChanged;
   final ValueChanged<SaleItem> onDelete;
+
+  /// 由外部提供每行的 key（首页用它持有 GlobalKey，好在记账后滚动定位到该行）
+  final Key? Function(String itemId)? keyOf;
 
   @override
   Widget build(BuildContext context) {
@@ -326,7 +330,7 @@ class SaleItemTable extends StatelessWidget {
           ),
           for (var i = 0; i < items.length; i++)
             SaleItemTableRow(
-              key: ValueKey(items[i].id),
+              key: keyOf?.call(items[i].id) ?? ValueKey(items[i].id),
               index: i + 1,
               item: items[i],
               onChanged: onChanged,

@@ -19,7 +19,7 @@ import 'product_edit_page.dart';
 ///
 /// 布局自上而下：
 /// 1. 标题栏（备份恢复菜单 + 批量 + 新增）
-/// 2. 实时搜索框（按商品名或条码）
+/// 2. 实时搜索框（按商品名 / 品牌 / 条码）
 /// 3. 分类：宽屏(>720) 左侧栏 / 手机端顶部横滑 Chips
 /// 4. 商品列表（星标 + 记一笔）
 /// 5. 底部操作条（总数 / 导出 / 导入 / 扫码 —— 扫码仅手机端显示）
@@ -76,6 +76,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
       list = list
           .where((p) =>
               p.name.toLowerCase().contains(q) ||
+              p.brand.toLowerCase().contains(q) ||
               p.barcode.toLowerCase().contains(q))
           .toList();
     }
@@ -692,14 +693,14 @@ class _ProductManagePageState extends State<ProductManagePage> {
         ),
       );
 
-  /// 实时搜索框（按商品名或条码）
+  /// 实时搜索框（按商品名 / 品牌 / 条码）
   Widget _searchBar() => Padding(
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
         child: TextField(
           controller: _searchCtrl,
           onChanged: (v) => setState(() => _query = v),
           decoration: InputDecoration(
-            hintText: '搜索商品名或条码',
+            hintText: '搜索商品名、品牌或条码',
             prefixIcon: const Icon(Icons.search, size: 20),
             suffixIcon: _query.isEmpty
                 ? null
