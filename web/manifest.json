@@ -1,12 +1,18 @@
 {
     "name": "店铺管家",
     "short_name": "店铺管家",
+    "id": "/",
     "start_url": ".",
+    "scope": ".",
     "display": "standalone",
+    "display_override": ["standalone", "minimal-ui"],
+    "orientation": "any",
+    "lang": "zh-CN",
+    "dir": "ltr",
     "background_color": "#FFF8F0",
     "theme_color": "#F57C00",
-    "description": "商品管理 × 营业额记录，一站式守店工具。",
-    "orientation": "portrait-primary",
+    "description": "商品管理 × 营业额记录，一站式守店工具：记账、看统计、管欠账，手机电脑通用。",
+    "categories": ["business", "productivity", "finance"],
     "prefer_related_applications": false,
     "icons": [
         {

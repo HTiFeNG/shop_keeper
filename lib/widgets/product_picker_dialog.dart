@@ -1,16 +1,29 @@
 import 'package:flutter/material.dart';
 
 import '../models/product.dart';
+import '../models/sale.dart';
 import '../services/store_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/search.dart';
+
+/// 选品结果：选中的商品 + 这笔按什么价记。
+///
+/// 带上计价方式是为了让「点整行 = 零售价、点『批发』按钮 = 批发价」
+/// 这两种意图在弹窗关闭时就确定下来，不必回到明细行再切一次。
+class PickedProduct {
+  const PickedProduct(this.product, this.mode);
+
+  final Product product;
+  final SalePriceMode mode;
+}
 
 /// 从商品库选品弹窗。
 ///
 /// 分区：常用（星标）置顶 > 分类浏览 > 搜索过滤。
-/// 选中后 pop 返回 Product（调用方自动带出名称 + 零售价）。
-Future<Product?> showProductPickerDialog(BuildContext context) {
-  return showModalBottomSheet<Product>(
+/// 选中后 pop 返回 [PickedProduct]（调用方据此带出名称 + 单价）。
+Future<PickedProduct?> showProductPickerDialog(BuildContext context) {
+  return showModalBottomSheet<PickedProduct>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -50,14 +63,21 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
               p.category.startsWith('$_category/'))
           .toList();
     }
-    final q = _query.trim().toLowerCase();
+    final q = _query.trim();
     if (q.isNotEmpty) {
-      list = list
-          .where((p) =>
-              p.name.toLowerCase().contains(q) ||
-              p.brand.toLowerCase().contains(q) ||
-              p.barcode.toLowerCase().contains(q))
-          .toList();
+      // 与商品页同一套检索：名称 / 品牌 / 条码 / 全拼 / 拼音首字母 + 相关度排序
+      final scored = <MapEntry<Product, int>>[];
+      for (final p in list) {
+        final s = SearchIndex.score(
+          query: q,
+          name: p.name,
+          brand: p.brand,
+          barcode: p.barcode,
+        );
+        if (s > 0) scored.add(MapEntry(p, s));
+      }
+      scored.sort((a, b) => b.value.compareTo(a.value));
+      list = scored.map((e) => e.key).toList();
     }
     return list;
   }
@@ -101,7 +121,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
                 controller: _searchCtrl,
                 autofocus: true,
                 decoration: InputDecoration(
-                  hintText: '搜索商品名、品牌或条码',
+                  hintText: '搜名称 / 拼音首字母 / 品牌 / 条码',
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: _query.isEmpty
                       ? null
@@ -261,15 +281,54 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
         style: const TextStyle(
             fontSize: AppTheme.fontCaption, color: AppTheme.textSecondary),
       ),
-      trailing: Text(
-        '¥${fmtPrice(p.retailPrice)}',
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          color: AppTheme.priceRed,
-        ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '¥${fmtPrice(p.retailPrice)}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.priceRed,
+                ),
+              ),
+              if (p.wholesalePrice > 0)
+                Text(
+                  '批 ¥${fmtPrice(p.wholesalePrice)}',
+                  style: const TextStyle(
+                      fontSize: AppTheme.fontCaption,
+                      color: AppTheme.textSecondary),
+                ),
+            ],
+          ),
+          // 整行点击 = 按零售价记；填过批发价的商品额外给一个「批发」快捷按钮
+          if (p.wholesalePrice > 0) ...[
+            const SizedBox(width: 4),
+            SizedBox(
+              height: 40,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.primaryText,
+                  side: const BorderSide(color: AppTheme.primary),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: const Size(0, 40),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => Navigator.pop(
+                    context, PickedProduct(p, SalePriceMode.wholesale)),
+                child: const Text('批发',
+                    style: TextStyle(fontSize: AppTheme.fontCaption)),
+              ),
+            ),
+          ],
+        ],
       ),
-      onTap: () => Navigator.pop(context, p),
+      onTap: () =>
+          Navigator.pop(context, PickedProduct(p, SalePriceMode.retail)),
       ),
     );
   }

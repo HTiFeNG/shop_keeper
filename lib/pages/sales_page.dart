@@ -17,7 +17,10 @@ import '../widgets/product_picker_dialog.dart';
 import '../widgets/sale_item_card.dart';
 import '../widgets/sale_item_table.dart';
 import '../widgets/scan_page.dart';
+import 'credit_page.dart';
 import 'monthly_stats_page.dart';
+import 'sales_search_page.dart';
+import 'sync_settings_page.dart';
 
 /// 营业额首页（Tab 1）。
 ///
@@ -102,6 +105,7 @@ class _SalesPageState extends State<SalesPage>
       _syncToday();
       _onPrefill();
       _maybeAskSampleData();
+      _checkRemoteBackup();
     });
   }
 
@@ -191,17 +195,18 @@ class _SalesPageState extends State<SalesPage>
 
   /// 所有「记账」入口都先对一次日期，再记到当前这一天，
   /// 最后把视图滚到刚变动的那一行。
-  void _record(Product p) {
+  void _record(Product p, {SalePriceMode mode = SalePriceMode.retail}) {
     _syncToday();
-    final id = store.recordSaleFromProduct(_date, p);
+    final id = store.recordSaleFromProduct(_date, p, mode: mode);
     unawaited(_scrollToRow(id));
   }
 
   Future<void> _addFromLibrary() async {
-    final p = await showProductPickerDialog(context);
-    if (p == null || !mounted) return;
-    _record(p);
-    _toast('已添加「${p.name}」');
+    final picked = await showProductPickerDialog(context);
+    if (picked == null || !mounted) return;
+    _record(picked.product, mode: picked.mode);
+    final tag = picked.mode == SalePriceMode.wholesale ? '（批发价）' : '';
+    _toast('已添加「${picked.product.name}」$tag');
   }
 
   /// 扫码直接记账：条码已在商品库 → 记一笔；不在 → 提示先去新建
@@ -286,9 +291,77 @@ class _SalesPageState extends State<SalesPage>
     }
   }
 
-  /// 普通提示
-  void _toast(String msg) {
+  // ==================== 查账 / 欠账 / 跨端同步 ====================
+
+  /// 查账：在历史明细里按关键字 + 日期区间翻找；点中某天则切回那天的明细
+  Future<void> _openSearch() async {
+    final date = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => SalesSearchPage(initialDate: _date)),
+    );
+    if (date == null || !mounted) return;
+    setState(() {
+      _date = date;
+      _followToday = date == du.todayKey();
+      _tabCtrl.index = 0;
+    });
+  }
+
+  void _openCredits() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const CreditPage()));
+  }
+
+  void _openSync() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const SyncSettingsPage()));
+  }
+
+  /// 启动时检查云端是否有更新的备份（只提示，不静默覆盖本地）
+  Future<void> _checkRemoteBackup() async {
+    await store.checkRemote();
+  }
+
+  /// 应用启动时挂起的云端备份 → 用户确认后恢复
+  Future<void> _applyRemoteBackup() async {
+    final preview = store.pendingRemotePreview;
+    final when = preview?.exportedAt == null
+        ? '未记录'
+        : preview!.exportedAt!.replaceFirst('T', ' ').split('.').first;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('云端有更新的备份'),
+        content: Text('云端那份备份（$when）是在别的设备上保存的：\n'
+            '· ${preview?.productCount ?? 0} 个商品\n'
+            '· ${preview?.dayCount ?? 0} 天的营业额\n'
+            '· ${preview?.creditCount ?? 0} 笔欠账\n\n'
+            '恢复会用云端的【完全覆盖】本机数据。\n'
+            '恢复前会自动存一份当前数据，之后可以一键撤销。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('先用本机的')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('用云端的')),
+        ],
+      ),
+    );
+    if (ok != true) {
+      store.dismissPendingRemote();
+      return;
+    }
+    final r = await store.applyPendingRemote();
     if (!mounted) return;
+    if (r.ok) {
+      _toast('已从云端恢复：${r.productCount} 个商品、${r.dayCount} 天记录');
+    } else {
+      _toastErr('恢复失败：${r.reason}');
+    }
+  }
+
+  /// 普通提示
+  void _toast(String msg) {    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -324,6 +397,11 @@ class _SalesPageState extends State<SalesPage>
         centerTitle: false,
         actions: [
           IconButton(
+            tooltip: '查账（按商品名或金额翻历史明细）',
+            icon: const Icon(Icons.manage_search),
+            onPressed: _openSearch,
+          ),
+          IconButton(
             tooltip: '导出当日明细 + 月度汇总',
             icon: const Icon(Icons.ios_share),
             onPressed: _exportSales,
@@ -333,9 +411,36 @@ class _SalesPageState extends State<SalesPage>
             icon: const Icon(Icons.more_vert),
             onSelected: (v) {
               if (v == 'backup') _exportBackup();
+              if (v == 'credits') _openCredits();
+              if (v == 'sync') _openSync();
             },
-            itemBuilder: (_) => const [
+            itemBuilder: (_) => [
               PopupMenuItem(
+                value: 'credits',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.account_balance_wallet_outlined),
+                  title: const Text('欠账本'),
+                  subtitle: Text(
+                    store.unsettledCredits().isEmpty
+                        ? '记录谁赊了账'
+                        : '未收回 ¥${fmtPrice(store.unsettledCreditTotal)}'
+                            '(${store.unsettledCredits().length} 笔)',
+                  ),
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'sync',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.cloud_sync_outlined),
+                  title: Text('跨端同步（坚果云）'),
+                  subtitle: Text('手机与电脑共用同一份数据'),
+                ),
+              ),
+              const PopupMenuItem(
                 value: 'backup',
                 child: ListTile(
                   dense: true,
@@ -501,6 +606,23 @@ class _SalesPageState extends State<SalesPage>
   /// 改动其实没保存），所以必须显式提示，而不是安静地继续。
   List<Widget> _warnings() {
     final out = <Widget>[];
+
+    // 云端有更新的备份（启动时检查出来的）——只提示，覆盖与否由用户决定
+    final pending = store.pendingRemotePreview;
+    if (pending != null) {
+      final when = pending.exportedAt == null
+          ? '未知时间'
+          : pending.exportedAt!.replaceFirst('T', ' ').split('.').first;
+      out.add(_banner(
+        icon: Icons.cloud_download_outlined,
+        color: AppTheme.primaryText,
+        text: '云端有一份更新的备份（$when），'
+            '${pending.productCount} 个商品 / ${pending.dayCount} 天记录。',
+        action: _applyRemoteBackup,
+        actionLabel: '查看',
+      ));
+    }
+
     if (store.loadError != null) {
       out.add(_banner(
         icon: Icons.error_outline,

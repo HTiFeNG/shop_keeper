@@ -146,6 +146,13 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
               ],
             ),
           ),
+          // 计价方式（零售 / 批发）
+          SizedBox(
+            width: 72,
+            child: it.canSwitchPriceMode
+                ? Center(child: _priceModeChip())
+                : const SizedBox.shrink(),
+          ),
           // 数量步进
           SizedBox(
             width: 150,
@@ -241,6 +248,41 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
     );
   }
 
+  /// 计价方式切换（零售价 ⇄ 批发价），逻辑与手机端卡片一致
+  Widget _priceModeChip() {
+    final it = widget.item;
+    final wholesale = it.priceMode == SalePriceMode.wholesale;
+    return Tooltip(
+      message: wholesale
+          ? '按批发价 ¥${fmtPrice(it.unitPrice)}，点一下改回零售价'
+          : '按零售价 ¥${fmtPrice(it.unitPrice)}，'
+              '点一下改按批发价 ¥${fmtPrice(it.wholesalePrice ?? 0)}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => widget.onChanged(it.withPriceMode(
+            wholesale ? SalePriceMode.retail : SalePriceMode.wholesale)),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: wholesale ? AppTheme.orangeSurface : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: wholesale ? AppTheme.primaryText : AppTheme.divider,
+            ),
+          ),
+          child: Text(
+            wholesale ? '批发' : '零售',
+            style: TextStyle(
+              fontSize: AppTheme.fontCaption,
+              fontWeight: FontWeight.w600,
+              color: wholesale ? AppTheme.primaryText : AppTheme.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _cellField({
     required TextEditingController ctrl,
     required FocusNode focus,
@@ -321,6 +363,7 @@ class SaleItemTable extends StatelessWidget {
               children: [
                 SizedBox(width: 32, child: Text('序号', style: AppTheme.caption, textAlign: TextAlign.center)),
                 Expanded(flex: 4, child: Text('商品', style: AppTheme.caption)),
+                SizedBox(width: 72, child: Text('计价', style: AppTheme.caption, textAlign: TextAlign.center)),
                 SizedBox(width: 150, child: Text('数量', style: AppTheme.caption, textAlign: TextAlign.center)),
                 SizedBox(width: 110, child: Text('单价', style: AppTheme.caption, textAlign: TextAlign.end)),
                 SizedBox(width: 150, child: Text('总价', style: AppTheme.caption, textAlign: TextAlign.end)),

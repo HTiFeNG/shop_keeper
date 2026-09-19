@@ -18,22 +18,139 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="店铺管家 —— 商品管理 × 营业额记录，一站式守店工具。">
-  <meta name="theme-color" content="#F57C00">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+  <meta name="description" content="店铺管家 —— 商品管理 × 营业额记录，一站式守店工具。记账、看统计、管欠账，手机电脑通用。">
+  <meta name="keywords" content="店铺管家,商品管理,营业额,记账,欠账,进销存,小店,守店">
+  <meta name="theme-color" content="#F57C00" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#8F4A00" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="author" content="店铺管家">
+  <meta name="referrer" content="no-referrer-when-downgrade">
+
+  <!-- 禁止点击延迟（移动端双击缩放） -->
+  <meta name="format-detection" content="telephone=no,email=no,address=no">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="店铺管家">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/Icon-512.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" sizes="192x192" href="icons/Icon-192.png">
 
   <title>店铺管家</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* 启动遮罩：Flutter 首帧渲染前显示，避免白屏 */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background-color: #FFF8F0;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC",
+                   "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+    #sk-splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: #FFF8F0;
+      z-index: 99999;
+      transition: opacity .35s ease;
+    }
+    #sk-splash.sk-hidden { opacity: 0; pointer-events: none; }
+    #sk-splash .sk-logo {
+      width: 84px;
+      height: 84px;
+      border-radius: 20px;
+      box-shadow: 0 6px 18px rgba(245, 124, 0, .28);
+    }
+    #sk-splash .sk-title {
+      font-size: 19px;
+      font-weight: 600;
+      color: #F57C00;
+      letter-spacing: .08em;
+    }
+    #sk-splash .sk-tip { font-size: 13px; color: #9E8468; }
+    #sk-splash .sk-spin {
+      width: 26px;
+      height: 26px;
+      border: 3px solid rgba(245, 124, 0, .22);
+      border-top-color: #F57C00;
+      border-radius: 50%;
+      animation: sk-rot .85s linear infinite;
+    }
+    @keyframes sk-rot { to { transform: rotate(360deg); } }
+
+    /* 安装提示条 */
+    #sk-install {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: #FFFFFF;
+      border: 1px solid #FFE0B2;
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(120, 80, 20, .16);
+      z-index: 99998;
+      font-size: 13px;
+      color: #4E3B27;
+    }
+    #sk-install.sk-show { display: flex; }
+    #sk-install .sk-install-text { flex: 1; line-height: 1.45; }
+    #sk-install .sk-install-text b { color: #F57C00; }
+    #sk-install button {
+      border: none;
+      border-radius: 9px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #F57C00;
+      color: #fff;
+      cursor: pointer;
+    }
+    #sk-install .sk-install-close {
+      background: transparent;
+      color: #A08D77;
+      padding: 8px 6px;
+      font-weight: 400;
+      font-size: 16px;
+      line-height: 1;
+    }
+  </style>
 </head>
 <body>
+  <!-- 启动遮罩 -->
+  <div id="sk-splash">
+    <img class="sk-logo" src="icons/Icon-192.png" alt="店铺管家">
+    <div class="sk-title">店铺管家</div>
+    <div class="sk-spin"></div>
+    <div class="sk-tip">正在加载数据…</div>
+  </div>
+
+  <!-- 添加到主屏幕提示 -->
+  <div id="sk-install" role="dialog" aria-live="polite">
+    <span class="sk-install-text">把 <b>店铺管家</b> 添加到桌面，像 App 一样打开</span>
+    <button type="button" id="sk-install-go">添加</button>
+    <button type="button" class="sk-install-close" id="sk-install-close" aria-label="关闭">×</button>
+  </div>
+
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -42,6 +159,74 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    // ---- 启动遮罩：Flutter 首帧渲染后淡出 ----
+    (function () {
+      var splash = document.getElementById('sk-splash');
+      var done = false;
+      function hideSplash() {
+        if (done || !splash) return;
+        done = true;
+        splash.classList.add('sk-hidden');
+        setTimeout(function () {
+          if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
+        }, 400);
+      }
+      window.addEventListener('flutter-first-frame', hideSplash);
+      // 兜底：12 秒后无论如何都移除遮罩，避免卡死
+      setTimeout(hideSplash, 12000);
+      window.addEventListener('error', function () {
+        var tip = splash && splash.querySelector('.sk-tip');
+        if (tip) tip.textContent = '加载出错了，请刷新页面重试';
+      });
+    })();
+
+    // ---- PWA 安装提示（Chrome / Edge / Android）----
+    (function () {
+      var KEY = 'sk_install_dismissed_at';
+      var dismissedAt = 0;
+      try { dismissedAt = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (e) {}
+      // 7 天内不再提示
+      if (dismissedAt && Date.now() - dismissedAt < 7 * 24 * 3600 * 1000) return;
+
+      var banner = document.getElementById('sk-install');
+      var deferredPrompt = null;
+
+      function isStandalone() {
+        return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+               window.navigator.standalone === true;
+      }
+      if (isStandalone()) return;
+
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        deferredPrompt = e;
+        if (banner) banner.classList.add('sk-show');
+      });
+
+      var go = document.getElementById('sk-install-go');
+      if (go) go.addEventListener('click', function () {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function () {
+          deferredPrompt = null;
+          if (banner) banner.classList.remove('sk-show');
+        });
+      });
+
+      var close = document.getElementById('sk-install-close');
+      if (close) close.addEventListener('click', function () {
+        if (banner) banner.classList.remove('sk-show');
+        try { localStorage.setItem(KEY, String(Date.now())); } catch (e) {}
+      });
+
+      window.addEventListener('appinstalled', function () {
+        if (banner) banner.classList.remove('sk-show');
+        try { localStorage.setItem(KEY, String(Date.now())); } catch (e) {}
+      });
+    })();
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

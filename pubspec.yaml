@@ -2,7 +2,7 @@ name: shop_keeper
 description: "店铺管家 —— 商品管理 × 营业额记录，一站式守店工具（Android + Web）。"
 publish_to: 'none' # 仅本地使用，不发布到 pub.dev
 
-version: 3.0.2+7
+version: 4.0.0+8
 
 environment:
   sdk: ^3.13.0
@@ -36,6 +36,15 @@ dependencies:
 
   # Web 端 Blob 下载（conditional import，仅 Web 编译时引入）
   web: ^1.1.0
+
+  # 汉字 → 拼音（纯 Dart 字典表）。用于商品搜索：输 "kl" 就能找到「可乐」，
+  # 不必先切中文输入法逐字打全。
+  lpinyin: ^2.0.3
+
+  # HTTP 客户端。用于坚果云 WebDAV 跨端同步（PUT/GET/PROPFIND + Basic 认证）。
+  # 选它而不选 webdav_client：本应用只需「固定路径的文件读写」，用不上目录遍历，
+  # 少一个依赖就少一份长期维护成本。
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

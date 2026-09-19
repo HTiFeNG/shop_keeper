@@ -168,6 +168,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
                   onChanged: _changeName,
                 ),
               ),
+              if (it.canSwitchPriceMode) _priceModeChip(),
               if (it.isManualMode) _manualTag(),
               IconButton(
                 tooltip: '删除此行',
@@ -291,6 +292,47 @@ class _SaleItemCardState extends State<SaleItemCard> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// 计价方式切换（零售价 ⇄ 批发价）。
+  ///
+  /// 只在「商品库来的行 + 该商品填过批发价」时出现 —— 手输行没有价格可切。
+  /// 点一下就把单价换成另一套价，并恢复自动联动（总价 = 单价 × 数量）。
+  Widget _priceModeChip() {
+    final wholesale = _item.priceMode == SalePriceMode.wholesale;
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Tooltip(
+        message: wholesale
+            ? '当前按批发价 ¥${fmtPrice(_item.unitPrice)}，点一下改回零售价'
+            : '当前按零售价 ¥${fmtPrice(_item.unitPrice)}，'
+                '点一下改按批发价 ¥${fmtPrice(_item.wholesalePrice ?? 0)}',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => widget.onChanged(_item.withPriceMode(
+              wholesale ? SalePriceMode.retail : SalePriceMode.wholesale)),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: wholesale ? AppTheme.orangeSurface : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: wholesale ? AppTheme.primaryText : AppTheme.divider,
+              ),
+            ),
+            child: Text(
+              wholesale ? '批发价' : '零售价',
+              style: TextStyle(
+                fontSize: AppTheme.fontCaption,
+                fontWeight: FontWeight.w600,
+                color:
+                    wholesale ? AppTheme.primaryText : AppTheme.textSecondary,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

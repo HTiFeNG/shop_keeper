@@ -135,7 +135,7 @@ class ProductTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // 中：零售价
+              // 中：零售价（＋批发价，填过才显示）
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -147,6 +147,14 @@ class ProductTile extends StatelessWidget {
                       color: AppTheme.priceRed,
                     ),
                   ),
+                  if (product.wholesalePrice > 0)
+                    Text(
+                      '批 ¥${fmtPrice(product.wholesalePrice)}',
+                      style: const TextStyle(
+                        fontSize: AppTheme.fontCaption,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
                 ],
               ),
               // 右：星标 + 记一笔 + 删除（批量模式下隐藏）

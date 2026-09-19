@@ -8,9 +8,17 @@ import '../utils/format.dart';
 import '../widgets/monthly_chart.dart';
 import '../widgets/stat_card.dart';
 
-/// 月度统计页：四宫格汇总卡 + 环比 + 柱状图 + 商品排行 + 估算毛利。
+/// 统计口径：按月 / 自定义区间 / 按年
+enum StatsMode { month, range, year }
+
+/// 统计页：汇总卡 + 环比 + 柱状图 + 商品排行 + 估算毛利。
 ///
-/// 内嵌于营业额首页的内部 Tab；点击柱子回调跳当日明细（由父层切换日期）。
+/// 三种口径共用同一套展示：
+/// - **按月**：看单月表现，点柱子跳当日明细
+/// - **自定义区间**：看「这批货卖完这段时间」的表现，环比对象是上一等长区间
+/// - **按年**：12 根柱子看全年节奏，点柱子直接下钻到那个月
+///
+/// 内嵌于营业额首页的内部 Tab。
 class MonthlyStatsPage extends StatefulWidget {
   const MonthlyStatsPage({
     super.key,
@@ -29,161 +37,393 @@ class MonthlyStatsPage extends StatefulWidget {
 
 class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
   final store = StoreService.instance;
+
+  StatsMode _mode = StatsMode.month;
   late String _month = widget.initialMonth;
+  late String _year = widget.initialMonth.substring(0, 4);
+  late String _start;
+  late String _end;
+
+  @override
+  void initState() {
+    super.initState();
+    _start = '$_month-01';
+    _end = _lastDayOf(_month);
+  }
+
+  /// 'YYYY-MM' → 'YYYY-MM-31'（自动适配大小月）
+  static String _lastDayOf(String yearMonth) {
+    final p = yearMonth.split('-');
+    final y = int.parse(p[0]);
+    final m = int.parse(p[1]);
+    final last = DateTime(y, m + 1, 0); // 下月第 0 天 = 本月最后一天
+    return du.dateKey(last);
+  }
+
+  // ==================== 期间切换 ====================
+
+  void _shiftMonth(int delta) {
+    final next = delta < 0 ? du.prevMonth(_month) : du.nextMonth(_month);
+    setState(() {
+      _month = next;
+      _year = next.substring(0, 4);
+      _start = '$next-01';
+      _end = _lastDayOf(next);
+    });
+  }
+
+  void _shiftYear(int delta) {
+    setState(() {
+      final y = int.parse(_year) + delta;
+      _year = y.toString();
+    });
+  }
+
+  Future<void> _pickRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      initialDateRange: DateTimeRange(
+        start: du.parseDateKey(_start),
+        end: du.parseDateKey(_end),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _start = du.dateKey(picked.start);
+      _end = du.dateKey(picked.end);
+    });
+  }
+
+  void _onBarTap(String key) {
+    if (_mode == StatsMode.year) {
+      // 年视图的柱子代表月份 → 直接下钻到那个月
+      setState(() {
+        _mode = StatsMode.month;
+        _month = key;
+        _start = '$key-01';
+        _end = _lastDayOf(key);
+      });
+    } else {
+      widget.onJumpToDate(key);
+    }
+  }
+
+  // ==================== 构建 ====================
 
   @override
   Widget build(BuildContext context) {
-    final stats = store.monthlyStats(_month);
-    final hasData = stats.recordCount > 0;
-
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        // 月份切换
-        Container(
-          decoration: AppTheme.cardDecoration,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Row(
-            children: [
-              IconButton(
-                tooltip: '上一月',
-                icon: const Icon(Icons.chevron_left, size: 26),
-                onPressed: () => setState(() => _month = du.prevMonth(_month)),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(du.monthLabel(_month),
-                      style: AppTheme.sectionTitle),
-                ),
-              ),
-              IconButton(
-                tooltip: '下一月',
-                icon: const Icon(Icons.chevron_right, size: 26),
-                onPressed: () => setState(() => _month = du.nextMonth(_month)),
-              ),
-            ],
-          ),
-        ),
+        _modeSwitcher(),
+        const SizedBox(height: 10),
+        _periodBar(),
         const SizedBox(height: 12),
-        if (!hasData) _emptyState() else ..._statsContent(stats),
+        ..._body(),
       ],
     );
   }
 
-  Widget _emptyState() {
+  Widget _modeSwitcher() => SegmentedButton<StatsMode>(
+        segments: const [
+          ButtonSegment(value: StatsMode.month, label: Text('按月')),
+          ButtonSegment(value: StatsMode.range, label: Text('自定义区间')),
+          ButtonSegment(value: StatsMode.year, label: Text('按年')),
+        ],
+        selected: {_mode},
+        showSelectedIcon: false,
+        onSelectionChanged: (s) => setState(() => _mode = s.first),
+      );
+
+  Widget _periodBar() {
+    final String title;
+    Widget? onTap;
+    switch (_mode) {
+      case StatsMode.month:
+        title = du.monthLabel(_month);
+        break;
+      case StatsMode.range:
+        title = '${du.dayLabel(_start)} – ${du.dayLabel(_end)}';
+        onTap = const Icon(Icons.edit_calendar_outlined,
+            size: 20, color: AppTheme.primaryText);
+        break;
+      case StatsMode.year:
+        title = '$_year年';
+        break;
+    }
+
+    final left = _mode == StatsMode.range
+        ? null
+        : () => _mode == StatsMode.month ? _shiftMonth(-1) : _shiftYear(-1);
+    final right = _mode == StatsMode.range
+        ? null
+        : () => _mode == StatsMode.month ? _shiftMonth(1) : _shiftYear(1);
+
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 48),
       decoration: AppTheme.cardDecoration,
-      child: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
         children: [
-          Icon(Icons.bar_chart,
-              size: 56, color: AppTheme.textSecondary.withValues(alpha: 0.45)),
-          const SizedBox(height: 12),
-          Text('${du.monthLabel(_month)} 暂无营业记录', style: AppTheme.body),
-          const SizedBox(height: 6),
-          const Text('回到「明细记录」记几笔，再回来看看统计',
-              style: AppTheme.caption),
+          if (left != null)
+            IconButton(
+              tooltip: _mode == StatsMode.month ? '上一月' : '上一年',
+              icon: const Icon(Icons.chevron_left, size: 26),
+              onPressed: left,
+            ),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+              onTap: _mode == StatsMode.range ? _pickRange : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTheme.sectionTitle),
+                    ),
+                    if (onTap != null) ...[
+                      const SizedBox(width: 6),
+                      onTap,
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (right != null)
+            IconButton(
+              tooltip: _mode == StatsMode.month ? '下一月' : '下一年',
+              icon: const Icon(Icons.chevron_right, size: 26),
+              onPressed: right,
+            ),
         ],
       ),
     );
   }
 
-  List<Widget> _statsContent(MonthlyStats stats) {
+  List<Widget> _body() {
+    switch (_mode) {
+      case StatsMode.month:
+        return _monthBody();
+      case StatsMode.range:
+        return _rangeBody();
+      case StatsMode.year:
+        return _yearBody();
+    }
+  }
+
+  // ==================== 按月 ====================
+
+  List<Widget> _monthBody() {
+    final stats = store.monthlyStats(_month);
+    if (stats.recordCount == 0) {
+      return [_empty('${du.monthLabel(_month)} 暂无营业记录')];
+    }
     return [
-      // 四宫格：宽屏（平板 / 桌面）排 4 列，否则 2 列。
-      // 原来固定 2 列，1280px 窗口下每张卡会被拉到近 600px 宽，很难扫读。
-      LayoutBuilder(
-        builder: (context, c) {
-          final cols = c.maxWidth > 900 ? 4 : 2;
-          return GridView.count(
-            crossAxisCount: cols,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: cols == 4 ? 2.8 : 2.1,
-            children: [
-              StatCard(
-                label: '当月总营业额',
-                value: formatCurrency(stats.totalRevenue),
-                color: AppTheme.primary,
-              ),
-              StatCard(
-                label: '日均营业额',
-                value: formatCurrency(stats.averageRevenue),
-                color: AppTheme.success,
-              ),
-              StatCard(
-                label: '最高营业额日',
-                value: formatCurrency(stats.maxRevenue),
-                subLabel: stats.maxRevenueDate != null
-                    ? du.dayLabel(stats.maxRevenueDate!)
-                    : null,
-                color: AppTheme.chartPeak,
-              ),
-              StatCard(
-                label: '销售总件数',
-                value: '${stats.totalItems} 件',
-                subLabel: '有记录 ${stats.recordCount} 天',
-                // 原来是全 App 唯一一处紫色，已并入暖色系
-                color: AppTheme.primaryText,
-              ),
-            ],
-          );
-        },
+      _cards(
+        totalLabel: '当月总营业额',
+        total: stats.totalRevenue,
+        avgLabel: '日均营业额',
+        avg: stats.averageRevenue,
+        maxTitle: '最高营业额日',
+        maxValue: stats.maxRevenue,
+        maxLabel: stats.maxRevenueDate == null
+            ? null
+            : du.dayLabel(stats.maxRevenueDate!),
+        items: stats.totalItems,
+        recordLabel: '有记录 ${stats.recordCount} 天',
       ),
       const SizedBox(height: 12),
-      // 环比条
-      _momBar(stats),
-      // 估算毛利：亏本时也要显示（旧实现 > 0 才显示，等于把亏损藏起来）
+      _momBar(stats.totalRevenue, stats.prevMonthRevenue, '上月'),
       const SizedBox(height: 10),
-      _profitBar(stats),
+      _profitBar(stats.estimatedProfit, stats.profitMissingCostLines),
       const SizedBox(height: 12),
-      // 柱状图
-      Container(
-        decoration: AppTheme.cardDecoration,
-        padding: const EdgeInsets.fromLTRB(12, 16, 16, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('每日营业额', style: AppTheme.sectionTitle),
-            const SizedBox(height: 4),
-            const Text('橙色为当月最高日，点柱子可跳到当天明细',
-                style: AppTheme.caption),
-            const SizedBox(height: 12),
-            MonthlyChart(
-              dailyData: stats.dailyData,
-              onBarTap: widget.onJumpToDate,
-            ),
-          ],
-        ),
+      _chartCard(
+        title: '每日营业额',
+        caption: '橙色为当月最高日，点柱子可跳到当天明细',
+        data: stats.dailyData,
       ),
-      const SizedBox(height: 12),
-      // 商品排行
-      if (stats.productRanking.isNotEmpty) _rankingCard(stats),
+      if (stats.productRanking.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        _rankingCard(stats.productRanking),
+      ],
     ];
   }
 
-  /// 本月 vs 上月环比条
-  Widget _momBar(MonthlyStats stats) {
-    final growth = stats.momGrowth;
+  // ==================== 自定义区间 ====================
+
+  List<Widget> _rangeBody() {
+    final stats = store.statsForRange(
+      _start,
+      _end,
+      label: '${du.dayLabel(_start)} – ${du.dayLabel(_end)}',
+    );
+    if (stats.recordCount == 0) {
+      return [_empty('这段时间暂无营业记录')];
+    }
+    return [
+      _cards(
+        totalLabel: '区间总营业额',
+        total: stats.totalRevenue,
+        avgLabel: '日均营业额',
+        avg: stats.averageRevenue,
+        maxTitle: '区间最高日',
+        maxValue: stats.maxRevenue,
+        maxLabel: stats.maxRevenueDate == null
+            ? null
+            : du.dayLabel(stats.maxRevenueDate!),
+        items: stats.totalItems,
+        recordLabel: '有记录 ${stats.recordCount} 天',
+      ),
+      const SizedBox(height: 12),
+      _momBar(stats.totalRevenue, stats.prevMonthRevenue, '上一区间'),
+      const SizedBox(height: 10),
+      _profitBar(stats.estimatedProfit, stats.profitMissingCostLines),
+      const SizedBox(height: 12),
+      _chartCard(
+        title: '每日营业额',
+        caption: '橙色为区间内最高日，点柱子可跳到当天明细',
+        data: stats.dailyData,
+      ),
+      if (stats.productRanking.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        _rankingCard(stats.productRanking),
+      ],
+    ];
+  }
+
+  // ==================== 按年 ====================
+
+  List<Widget> _yearBody() {
+    final stats = store.yearlyStats(_year);
+    if (stats.totalRevenue <= 0) {
+      return [_empty('$_year年 暂无营业记录')];
+    }
+    return [
+      _cards(
+        totalLabel: '全年总营业额',
+        total: stats.totalRevenue,
+        avgLabel: '月均营业额',
+        avg: stats.averageRevenue,
+        maxTitle: '最高营业额月',
+        maxValue: stats.bestMonthRevenue,
+        maxLabel: stats.bestMonth == null
+            ? null
+            : du.monthLabel(stats.bestMonth!),
+        items: stats.totalItems,
+        recordLabel: '有账 ${stats.activeMonths} 个月 · ${stats.recordCount} 天',
+      ),
+      const SizedBox(height: 12),
+      _profitBar(stats.estimatedProfit, stats.profitMissingCostLines),
+      const SizedBox(height: 12),
+      _chartCard(
+        title: '每月营业额',
+        caption: '橙色为全年最高月，点柱子可下钻到那个月',
+        data: stats.chartData,
+      ),
+      if (stats.productRanking.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        _rankingCard(stats.productRanking, title: '全年商品排行（按营业额）'),
+      ],
+    ];
+  }
+
+  // ==================== 公共组件 ====================
+
+  Widget _empty(String text) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        decoration: AppTheme.cardDecoration,
+        child: Column(
+          children: [
+            Icon(Icons.bar_chart,
+                size: 56,
+                color: AppTheme.textSecondary.withValues(alpha: 0.45)),
+            const SizedBox(height: 12),
+            Text(text, style: AppTheme.body),
+            const SizedBox(height: 6),
+            const Text('回到「明细记录」记几笔，再回来看看统计',
+                style: AppTheme.caption),
+          ],
+        ),
+      );
+
+  /// 四宫格汇总卡（宽屏 4 列 / 窄屏 2 列）
+  Widget _cards({
+    required String totalLabel,
+    required double total,
+    required String avgLabel,
+    required double avg,
+    required String maxTitle,
+    required double maxValue,
+    required String? maxLabel,
+    required int items,
+    required String recordLabel,
+  }) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final cols = c.maxWidth > 900 ? 4 : 2;
+        return GridView.count(
+          crossAxisCount: cols,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: cols == 4 ? 2.8 : 2.1,
+          children: [
+            StatCard(
+              label: totalLabel,
+              value: formatCurrency(total),
+              color: AppTheme.primary,
+            ),
+            StatCard(
+              label: avgLabel,
+              value: formatCurrency(avg),
+              color: AppTheme.success,
+            ),
+            StatCard(
+              label: maxTitle,
+              value: formatCurrency(maxValue),
+              subLabel: maxLabel,
+              color: AppTheme.chartPeak,
+            ),
+            StatCard(
+              label: '销售总件数',
+              value: '$items 件',
+              subLabel: recordLabel,
+              color: AppTheme.primaryText,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 环比条：本期 vs 上一等长期间
+  Widget _momBar(double current, double prev, String prevLabel) {
+    final growth = prev > 0 ? (current - prev) / prev : null;
     final String text;
     final Color color;
     final IconData icon;
     if (growth == null) {
-      text = stats.prevMonthRevenue > 0
-          ? '上月 ${formatCurrency(stats.prevMonthRevenue)}'
-          : '上月没有记录，这是第一个有账的月份';
+      text = prev > 0
+          ? '$prevLabel ${formatCurrency(prev)}'
+          : '$prevLabel没有记录，这是第一个有账的期间';
       color = AppTheme.textSecondary;
       icon = Icons.info_outline;
     } else if (growth >= 0) {
       text =
-          '比上月 ${formatCurrency(stats.prevMonthRevenue)} 多卖 ${(growth * 100).toStringAsFixed(0)}%';
+          '比$prevLabel ${formatCurrency(prev)} 多卖 ${(growth * 100).toStringAsFixed(0)}%';
       color = AppTheme.success;
       icon = Icons.trending_up;
     } else {
       text =
-          '比上月 ${formatCurrency(stats.prevMonthRevenue)} 少卖 ${(-growth * 100).toStringAsFixed(0)}%';
+          '比$prevLabel ${formatCurrency(prev)} 少卖 ${(-growth * 100).toStringAsFixed(0)}%';
       color = AppTheme.priceRed;
       icon = Icons.trending_down;
     }
@@ -211,11 +451,9 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
   /// 毛利按「售出时的进价快照」计算，所以之后修改商品进价**不会**改写已经
   /// 过去月份的毛利；亏本销售也如实显示为负数（旧实现用 margin > 0 过滤，
   /// 会把亏损当 0，等于高估利润）。
-  Widget _profitBar(MonthlyStats stats) {
-    final profit = stats.estimatedProfit;
+  Widget _profitBar(double profit, int missing) {
     final negative = profit < 0;
     final color = negative ? AppTheme.negativeStockRed : AppTheme.success;
-    final missing = stats.profitMissingCostLines;
     return Container(
       decoration: AppTheme.cardDecoration,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -240,8 +478,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
             ],
           ),
           const SizedBox(height: 4),
-          // 口径说明单独一行：原来和 14px 正文挤在同一 Row，大字号下会被压没
-          const Text('按「零售价 − 售出时的参考进价」估算，之后改进价不会改写历史',
+          const Text('按「售出价 − 售出时的参考进价」估算，之后改进价不会改写历史',
               style: AppTheme.caption),
           if (missing > 0) ...[
             const SizedBox(height: 2),
@@ -255,9 +492,31 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
     );
   }
 
+  Widget _chartCard({
+    required String title,
+    required String caption,
+    required List<MonthlyDayData> data,
+  }) {
+    return Container(
+      decoration: AppTheme.cardDecoration,
+      padding: const EdgeInsets.fromLTRB(12, 16, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppTheme.sectionTitle),
+          const SizedBox(height: 4),
+          Text(caption, style: AppTheme.caption),
+          const SizedBox(height: 12),
+          MonthlyChart(dailyData: data, onBarTap: _onBarTap),
+        ],
+      ),
+    );
+  }
+
   /// 商品维度排行（前 10）：卖得最多 / 贡献最大
-  Widget _rankingCard(MonthlyStats stats) {
-    final top = stats.productRanking.take(10).toList();
+  Widget _rankingCard(List<ProductRank> ranking,
+      {String title = '商品排行（按营业额）'}) {
+    final top = ranking.take(10).toList();
     final maxRevenue = top.isEmpty ? 1.0 : top.first.revenue;
     return Container(
       decoration: AppTheme.cardDecoration,
@@ -265,7 +524,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('商品排行（按营业额）', style: AppTheme.sectionTitle),
+          Text(title, style: AppTheme.sectionTitle),
           const SizedBox(height: 4),
           const Text('看看哪些货最走量，进货心里有数', style: AppTheme.caption),
           const SizedBox(height: 10),

@@ -80,11 +80,14 @@ class MonthlyChart extends StatelessWidget {
                   // 数据多时稀疏显示日期标签
                   final step = dailyData.length > 12 ? 3 : 1;
                   if (i % step != 0) return const SizedBox.shrink();
-                  final day = dailyData[i].date.substring(8);
+                  final d = dailyData[i];
+                  // 按月 → 取日；按年（数据只有 12 项）→ 用自带的「1月」标签
+                  final text = d.label ??
+                      (d.date.length >= 10 ? d.date.substring(8) : d.date);
                   return Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      day,
+                      text,
                       style: const TextStyle(
                           fontSize: AppTheme.fontCaption,
                           color: AppTheme.textSecondary),
@@ -101,7 +104,7 @@ class MonthlyChart extends StatelessWidget {
               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                 final d = dailyData[group.x.toInt()];
                 return BarTooltipItem(
-                  '${d.date}\n营业额 ${formatCurrency(d.revenue)}\n${d.productCount} 种 · ${d.totalQuantity} 件',
+                  '${d.tooltipLabel ?? d.date}\n营业额 ${formatCurrency(d.revenue)}\n${d.productCount} 种 · ${d.totalQuantity} 件',
                   const TextStyle(
                       fontSize: AppTheme.fontCaption,
                       color: AppTheme.textPrimary),

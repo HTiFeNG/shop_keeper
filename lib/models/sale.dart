@@ -1,5 +1,24 @@
 import 'product.dart';
 
+/// 计价方式：零售 / 批发。
+///
+/// 一箱饮料按零售价一瓶瓶卖，和整箱按批发价出去，是两笔完全不同的生意，
+/// 记账时必须能区分——否则「批发价」字段就永远只是个没人用的摆设。
+enum SalePriceMode {
+  retail('retail', '零售'),
+  wholesale('wholesale', '批发');
+
+  const SalePriceMode(this.storageName, this.label);
+
+  final String storageName; // 落盘的稳定标识（不要用 index，重排会串数据）
+  final String label; // UI 显示
+
+  static SalePriceMode fromName(String? name) => SalePriceMode.values.firstWhere(
+        (e) => e.storageName == name,
+        orElse: () => SalePriceMode.retail,
+      );
+}
+
 /// 一行销售明细。
 ///
 /// [name] 是快照：不随后台商品改名联动（保留历史真实记录）。
@@ -14,12 +33,15 @@ class SaleItem {
     this.isManualMode = false,
     this.productId,
     this.costPrice,
+    this.priceMode = SalePriceMode.retail,
+    this.retailPrice,
+    this.wholesalePrice,
   });
 
   String id; // 行唯一标识（微秒时间戳 + 进程内自增，避免同毫秒碰撞）
   String name; // 商品名快照
   int quantity; // 数量 >= 0
-  double unitPrice; // 单价（选品时带入零售价）
+  double unitPrice; // 单价（选品时按计价方式带入）
   double totalPrice; // 总价 = unitPrice*quantity，或手动改写
   bool isManualMode; // true = 手动总价（解绑自动计算）
   String? productId; // 关联商品库 id；纯手输行为 null
@@ -30,6 +52,22 @@ class SaleItem {
   /// 一起改掉，历史报表无法复现。
   double? costPrice;
 
+  /// 计价方式（零售 / 批发）
+  SalePriceMode priceMode;
+
+  /// 商品零售价快照（用于在行内切换计价方式）
+  double? retailPrice;
+
+  /// 商品批发价快照（null / 0 = 该商品没有批发价，不显示切换入口）
+  double? wholesalePrice;
+
+  /// 能否切换零售/批发：必须是商品库来的行，且商品有批发价
+  bool get canSwitchPriceMode =>
+      productId != null && (wholesalePrice ?? 0) > 0;
+
+  /// 切到零售时应使用的单价（老数据没有快照 → 退回当前单价）
+  double get baseRetailPrice => retailPrice ?? unitPrice;
+
   /// 生成唯一行 id：微秒时间戳 + 进程内自增序号。
   ///
   /// 旧实现是「毫秒 + 16 位随机数」，同一毫秒内建多行有碰撞风险；
@@ -38,17 +76,40 @@ class SaleItem {
   static String newId() =>
       '${DateTime.now().microsecondsSinceEpoch}-${(_seq++).toRadixString(16)}';
 
-  /// 从商品库商品创建一行：带入名称 + 零售价 + 进价快照，数量 1
-  factory SaleItem.fromProduct(Product p) => SaleItem(
-        id: newId(),
-        name: p.name,
-        quantity: 1,
-        unitPrice: p.retailPrice,
-        totalPrice: p.retailPrice,
-        isManualMode: false,
-        productId: p.id,
-        costPrice: p.purchasePrice > 0 ? p.purchasePrice : null,
-      );
+  /// 从商品库商品创建一行：带入名称 + 价格 + 进价快照，数量 1
+  factory SaleItem.fromProduct(
+    Product p, {
+    SalePriceMode mode = SalePriceMode.retail,
+  }) {
+    final hasWholesale = p.wholesalePrice > 0;
+    final useWholesale = mode == SalePriceMode.wholesale && hasWholesale;
+    final price = useWholesale ? p.wholesalePrice : p.retailPrice;
+    return SaleItem(
+      id: newId(),
+      name: p.name,
+      quantity: 1,
+      unitPrice: price,
+      totalPrice: price,
+      isManualMode: false,
+      productId: p.id,
+      costPrice: p.purchasePrice > 0 ? p.purchasePrice : null,
+      priceMode: useWholesale ? SalePriceMode.wholesale : SalePriceMode.retail,
+      retailPrice: p.retailPrice,
+      wholesalePrice: hasWholesale ? p.wholesalePrice : null,
+    );
+  }
+
+  /// 按当前 [priceMode] 重算单价与总价（恢复自动联动）
+  SaleItem withPriceMode(SalePriceMode mode) {
+    final price = mode == SalePriceMode.wholesale
+        ? (wholesalePrice ?? unitPrice)
+        : baseRetailPrice;
+    return copy()
+      ..priceMode = mode
+      ..unitPrice = price
+      ..totalPrice = price * quantity
+      ..isManualMode = false;
+  }
 
   SaleItem copy() => SaleItem(
         id: id,
@@ -59,6 +120,9 @@ class SaleItem {
         isManualMode: isManualMode,
         productId: productId,
         costPrice: costPrice,
+        priceMode: priceMode,
+        retailPrice: retailPrice,
+        wholesalePrice: wholesalePrice,
       );
 
   Map<String, dynamic> toJson() => {
@@ -70,6 +134,9 @@ class SaleItem {
         'isManualMode': isManualMode,
         'productId': productId,
         'costPrice': costPrice,
+        'priceMode': priceMode.storageName,
+        'retailPrice': retailPrice,
+        'wholesalePrice': wholesalePrice,
       };
 
   factory SaleItem.fromJson(Map<String, dynamic> json) => SaleItem(
@@ -81,6 +148,9 @@ class SaleItem {
         isManualMode: json['isManualMode'] as bool? ?? false,
         productId: json['productId'] as String?,
         costPrice: (json['costPrice'] as num?)?.toDouble(),
+        priceMode: SalePriceMode.fromName(json['priceMode'] as String?),
+        retailPrice: (json['retailPrice'] as num?)?.toDouble(),
+        wholesalePrice: (json['wholesalePrice'] as num?)?.toDouble(),
       );
 }
 

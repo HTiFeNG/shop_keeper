@@ -9,6 +9,7 @@ import '../services/export_service.dart';
 import '../services/store_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/csv_codec.dart';
+import '../utils/search.dart';
 import '../widgets/category_chips.dart';
 import '../widgets/category_sidebar.dart';
 import '../widgets/product_tile.dart';
@@ -71,14 +72,23 @@ class _ProductManagePageState extends State<ProductManagePage> {
 
   List<Product> _filteredProducts() {
     var list = _categoryProducts();
-    final q = _query.trim().toLowerCase();
+    final q = _query.trim();
     if (q.isNotEmpty) {
-      list = list
-          .where((p) =>
-              p.name.toLowerCase().contains(q) ||
-              p.brand.toLowerCase().contains(q) ||
-              p.barcode.toLowerCase().contains(q))
-          .toList();
+      // 名称 / 品牌 / 条码 / 汉字全拼 / 拼音首字母 混合匹配，并按相关度排序。
+      // 例：输 "kl" 出「可口可乐」，输 "nfsq" 出「农夫山泉」。
+      final scored = <MapEntry<Product, int>>[];
+      for (final p in list) {
+        final s = SearchIndex.score(
+          query: q,
+          name: p.name,
+          brand: p.brand,
+          barcode: p.barcode,
+        );
+        if (s > 0) scored.add(MapEntry(p, s));
+      }
+      // 稳定排序：相关度相同时保持商品库原有顺序（不会每次搜索都跳来跳去）
+      scored.sort((a, b) => b.value.compareTo(a.value));
+      list = scored.map((e) => e.key).toList();
     }
     return list;
   }
@@ -700,7 +710,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
           controller: _searchCtrl,
           onChanged: (v) => setState(() => _query = v),
           decoration: InputDecoration(
-            hintText: '搜索商品名、品牌或条码',
+            hintText: '搜名称 / 拼音首字母 / 品牌 / 条码',
             prefixIcon: const Icon(Icons.search, size: 20),
             suffixIcon: _query.isEmpty
                 ? null

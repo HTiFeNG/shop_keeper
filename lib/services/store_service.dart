@@ -4,21 +4,32 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/sample_products.dart';
+import '../models/credit.dart';
 import '../models/monthly_stats.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
 import '../utils/csv_codec.dart';
 import '../utils/date_utils.dart' as du;
+import 'backup_codec.dart';
+import 'nutstore_sync.dart';
+import 'stats_calculator.dart';
+import 'store_constants.dart';
 
-/// 固定分类名：不可删除、不可重命名
-const String kCategoryAll = '全部';
-const String kCategoryNone = '未分类';
+// 分类常量与备份结果类型的历史导入路径保持不变（页面 / 测试继续从本文件取）
+export 'backup_codec.dart' show BackupPreview, RestoreResult;
+export 'store_constants.dart' show kCategoryAll, kCategoryNone;
 
-/// 数据层：商品 / 分类 / 搜索历史 / 销售记录 的本地持久化与全部业务逻辑。
+/// 数据层门面：商品 / 分类 / 销售记录 / 赊账 / 云同步 的本地持久化与编排。
 ///
 /// 存储方案：shared_preferences + JSON 字符串（Web 端自动落 localStorage）。
 /// 所有键名统一 `sk_` 前缀，与旧 product_store（ps_*）/ 旧 sales-tracker 零冲突。
 /// 所有修改操作立即落盘并 notifyListeners()，页面通过 ListenableBuilder 自动刷新。
+///
+/// 4.0.0 起本类只保留「状态容器 + 编排 + 持久化」三件事，具体算法拆到：
+/// - [StatsCalculator]  统计聚合（月 / 区间 / 年）
+/// - [BackupCodec]      备份文件编解码
+/// - [NutstoreSync]     坚果云 WebDAV 同步
+/// - `utils/search.dart` 商品检索（拼音）
 class StoreService extends ChangeNotifier {
   StoreService._();
 
@@ -27,16 +38,22 @@ class StoreService extends ChangeNotifier {
   static const String _kProducts = 'sk_products';
   static const String _kCategories = 'sk_categories';
   static const String _kSales = 'sk_sales';
+  static const String _kCredits = 'sk_credits';
   static const String _kSeeded = 'sk_seeded';
   static const String _kNextSeq = 'sk_next_seq';
   static const String _kLastBackup = 'sk_last_backup';
   static const String _kRestoreSnapshot = 'sk_restore_snapshot';
+  static const String _kSyncConfig = 'sk_sync_config';
+  static const String _kSyncLast = 'sk_sync_last';
 
   List<Product> products = [];
   List<String> categories = []; // 不含固定项「全部」「未分类」
 
   /// 销售记录：键为日期 `YYYY-MM-DD`
   Map<String, DailyRecord> sales = {};
+
+  /// 赊账台账（不参与营业额统计，见 models/credit.dart 的说明）
+  List<Credit> credits = [];
 
   bool ready = false; // 首次加载完成前为 false
 
@@ -53,7 +70,7 @@ class StoreService extends ChangeNotifier {
   /// 最近一次保存失败的原因（null = 一切正常）。UI 据此提示用户尽快备份。
   String? saveError;
 
-  /// 上次成功导出备份的时间（null = 从未备份）
+  /// 上次成功备份（本地导出或上传云端）的时间（null = 从未备份）
   DateTime? lastBackupAt;
 
   /// 上次启动时因单条数据损坏而被丢弃的条目数（> 0 时 UI 应提醒用户）
@@ -68,6 +85,22 @@ class StoreService extends ChangeNotifier {
 
   /// 商品页「记一笔」→ 首页预填一行 的跨 Tab 通知（解耦）
   final ValueNotifier<SalePrefill?> salePrefill = ValueNotifier<SalePrefill?>(null);
+
+  // ==================== 云同步状态 ====================
+
+  NutstoreConfig syncConfig = const NutstoreConfig();
+
+  /// 上次成功同步（上传 / 下载）的时间
+  DateTime? lastSyncAt;
+
+  /// 上次同步失败的原因（null = 正常）
+  String? lastSyncError;
+
+  /// 启动时发现「云端比本机新」的待处理备份（不会自动覆盖本地）
+  BackupPreview? pendingRemotePreview;
+  String? _pendingRemoteText;
+
+  bool get hasPendingRemote => _pendingRemoteText != null;
 
   /// 解析 JSON，失败返回 null（不抛异常、不吞掉调用方的其它错误）
   Object? _tryDecode(String raw) {
@@ -97,6 +130,7 @@ class StoreService extends ChangeNotifier {
 
     products = [];
     sales = {};
+    credits = [];
     droppedOnLoad = 0;
     loadError = null;
 
@@ -153,6 +187,38 @@ class StoreService extends ChangeNotifier {
         loadError = '营业额数据已损坏，无法读取';
       }
     }
+
+    // ---- 赊账台账 ----
+    final creditsRaw = prefs.getString(_kCredits);
+    if (creditsRaw != null && creditsRaw.isNotEmpty) {
+      final decoded = _tryDecode(creditsRaw);
+      if (decoded is List) {
+        for (final e in decoded) {
+          if (e is Map<String, dynamic>) {
+            final c = Credit.fromJson(e);
+            if (c.customer.isNotEmpty || c.amount != 0) {
+              credits.add(c);
+            } else {
+              droppedOnLoad++;
+            }
+          } else {
+            droppedOnLoad++;
+          }
+        }
+      } else {
+        loadError = '欠账数据已损坏，无法读取';
+      }
+    }
+
+    // ---- 云同步配置 ----
+    final syncRaw = prefs.getString(_kSyncConfig);
+    if (syncRaw != null && syncRaw.isNotEmpty) {
+      final decoded = _tryDecode(syncRaw);
+      if (decoded is Map<String, dynamic>) {
+        syncConfig = NutstoreConfig.fromJson(decoded);
+      }
+    }
+    lastSyncAt = DateTime.tryParse(prefs.getString(_kSyncLast) ?? '');
 
     // ---- 编号序列 ----
     // 必须大于「现有商品 ∪ 历史销售引用过」的最大编号，
@@ -401,6 +467,21 @@ class StoreService extends ChangeNotifier {
   /// 某天的日合计
   double dayTotal(String date) => sales[date]?.total ?? 0;
 
+  /// [start, end] 闭区间内**有记录**的天，按日期倒序（最近的在前）。
+  ///
+  /// 供「查账」页使用：按关键字在历史明细里翻找，必须跨天，而不是只看某一天。
+  List<DailyRecord> recordsInRange(String startKey, String endKey) {
+    final list = sales.entries
+        .where((e) =>
+            e.key.compareTo(startKey) >= 0 &&
+            e.key.compareTo(endKey) <= 0 &&
+            e.value.items.isNotEmpty)
+        .map((e) => e.value)
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    return list;
+  }
+
   /// 新增 / 更新一行销售明细。
   ///
   /// 库存联动已随「库存功能」一并移除：本应用只记营业额，不跟踪库存。
@@ -416,31 +497,48 @@ class StoreService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 记录一件商品的销售：当天已有同商品行（productId 相同）→ 数量+1 合并，
+  /// 记录一件商品的销售：当天已有**同商品同计价方式**的行 → 数量+1 合并，
   /// 否则新建一行。
+  ///
+  /// 为什么不跨计价方式合并：一行零售价、一行批发价是两笔账，
+  /// 合并会把两套单价揉成一个数字，事后谁也说不清卖的是什么价。
   ///
   /// 手动改过总价的行（抹零 / 改价）合并时，把那份总价理解为**该行的实际
   /// 单价**再按新数量等比放大：1 件手动 ¥5 → 再卖 1 件 = 2 件 ¥10。
   /// 旧实现直接沿用原总价，会出现「件数 +1、营业额却一分没涨」的漏记。
   ///
   /// 返回被新增（或合并进去）的那一行 id，供 UI 滚动定位到它。
-  String recordSaleFromProduct(String date, Product product) {
+  String recordSaleFromProduct(
+    String date,
+    Product product, {
+    SalePriceMode mode = SalePriceMode.retail,
+  }) {
     final record = sales[date];
     if (record != null) {
-      final idx = record.items.indexWhere((e) => e.productId == product.id);
+      final idx = record.items.indexWhere(
+          (e) => e.productId == product.id && e.priceMode == mode);
       if (idx >= 0) {
         final it = record.items[idx];
         final q = it.quantity + 1;
         final double total = it.isManualMode
-            ? (it.quantity > 0 ? it.totalPrice / it.quantity * q : q * it.unitPrice)
+            ? (it.quantity > 0
+                ? it.totalPrice / it.quantity * q
+                : q * it.unitPrice)
             : q * it.unitPrice;
-        upsertSaleItem(date, it.copy()
+        final next = it.copy()
           ..quantity = q
-          ..totalPrice = total);
+          ..totalPrice = total;
+        // 手动价的行合并后，把单价同步成「实际单价」，让单价 × 数量 = 总价重新自洽。
+        // 否则单价还停在商品原价上，用户之后一按数量加减就会用旧单价把总价改掉
+        // （例如抹零成 1 件 ¥5、单价字段仍是 ¥2，再点 + 就变成 3 件 ¥6）。
+        if (it.isManualMode && q > 0) {
+          next.unitPrice = total / q;
+        }
+        upsertSaleItem(date, next);
         return it.id;
       }
     }
-    final item = SaleItem.fromProduct(product);
+    final item = SaleItem.fromProduct(product, mode: mode);
     upsertSaleItem(date, item);
     return item.id;
   }
@@ -460,111 +558,126 @@ class StoreService extends ChangeNotifier {
     return item;
   }
 
-  // ==================== 月度统计 ====================
+  // ==================== 统计 ====================
 
-  /// 按月聚合统计（含环比、商品排行、估算毛利）。
-  MonthlyStats monthlyStats(String yearMonth) {
-    final monthRecords = sales.values
-        .where((r) => r.date.startsWith(yearMonth) && r.items.isNotEmpty)
-        .toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
+  /// 按**月**聚合统计（含环比、商品排行、估算毛利）
+  MonthlyStats monthlyStats(String yearMonth) => StatsCalculator.monthly(
+        sales: sales,
+        products: products,
+        yearMonth: yearMonth,
+      );
 
-    final dailyData = <MonthlyDayData>[];
-    // 商品维度聚合：key = productId 或 'name:名称'（悬空 / 手输行按名称聚合）
-    final Map<String, ProductRank> rankMap = {};
-    // 一次性建索引：旧实现每行都线性扫一遍 products，
-    // 「几百个商品 × 一个月几千行」会在 UI 线程上明显卡顿。
-    final byId = {for (final p in products) p.id: p};
-    double estimatedProfit = 0;
-    int missingCostLines = 0;
+  /// 按**任意区间**聚合统计（含起止两天，环比对象为上一等长区间）
+  MonthlyStats statsForRange(String startKey, String endKey, {String? label}) =>
+      StatsCalculator.range(
+        sales: sales,
+        products: products,
+        startKey: startKey,
+        endKey: endKey,
+        label: label ?? '$startKey – $endKey',
+      );
 
-    for (final record in monthRecords) {
-      double revenue = 0;
-      int totalQuantity = 0;
-      for (final item in record.items) {
-        revenue += item.totalPrice;
-        totalQuantity += item.quantity;
-
-        final key = item.productId ?? 'name:${item.name}';
-        final rank = rankMap.putIfAbsent(
-          key,
-          () => ProductRank(
-              productId: item.productId, name: item.name, quantity: 0, revenue: 0),
-        );
-        rankMap[key] = ProductRank(
-          productId: rank.productId,
-          name: rank.name,
-          quantity: rank.quantity + item.quantity,
-          revenue: rank.revenue + item.totalPrice,
-        );
-
-        // 估算毛利：营收取 totalPrice（与上面完全同口径），成本取**售出时快照**。
-        // 快照缺失（升级前的老数据、或当时没填进价）才退回商品库当前进价。
-        // 刻意不再用 margin > 0 过滤：亏本清仓必须记成负数，否则毛利被高估。
-        final cost = item.costPrice ??
-            (item.productId == null ? null : byId[item.productId!]?.purchasePrice);
-        if (cost != null && cost > 0) {
-          estimatedProfit += item.totalPrice - cost * item.quantity;
-        } else {
-          missingCostLines++;
-        }
-      }
-      dailyData.add(MonthlyDayData(
-        date: record.date,
-        revenue: revenue,
-        productCount: record.items.length,
-        totalQuantity: totalQuantity,
-      ));
-    }
-
-    final totalRevenue = dailyData.fold(0.0, (s, d) => s + d.revenue);
-    final totalItems = dailyData.fold(0, (s, d) => s + d.totalQuantity);
-    final recordCount = dailyData.length;
-    final averageRevenue = recordCount > 0 ? totalRevenue / recordCount : 0.0;
-
-    // 最高日：初始化为第一天，营收并列时保留最早日期
-    double maxRevenue = dailyData.isNotEmpty ? dailyData.first.revenue : 0;
-    String? maxRevenueDate = dailyData.isNotEmpty ? dailyData.first.date : null;
-    for (var i = 1; i < dailyData.length; i++) {
-      if (dailyData[i].revenue > maxRevenue) {
-        maxRevenue = dailyData[i].revenue;
-        maxRevenueDate = dailyData[i].date;
-      }
-    }
-
-    final ranking = rankMap.values.toList()
-      ..sort((a, b) => b.revenue.compareTo(a.revenue));
-
-    return MonthlyStats(
-      yearMonth: yearMonth,
-      dailyData: dailyData,
-      totalRevenue: totalRevenue,
-      averageRevenue: averageRevenue,
-      maxRevenue: maxRevenue,
-      maxRevenueDate: maxRevenueDate,
-      totalItems: totalItems,
-      recordCount: recordCount,
-      prevMonthRevenue: _monthRevenue(du.prevMonth(yearMonth)),
-      estimatedProfit: estimatedProfit,
-      profitMissingCostLines: missingCostLines,
-      productRanking: ranking,
-    );
-  }
-
-  /// 某月总营收（内部环比用，不递归）
-  double _monthRevenue(String yearMonth) {
-    double sum = 0;
-    for (final r in sales.values) {
-      if (r.date.startsWith(yearMonth)) {
-        sum += r.total;
-      }
-    }
-    return sum;
-  }
+  /// 按**年**聚合统计（12 个月完整列出）
+  YearlyStats yearlyStats(String year) => StatsCalculator.yearly(
+        sales: sales,
+        products: products,
+        year: year,
+      );
 
   /// 商品维度排行（monthlyStats 的便捷入口）
   List<ProductRank> productStats(String yearMonth) =>
       monthlyStats(yearMonth).productRanking;
+
+  // ==================== 赊账台账 ====================
+
+  /// 未结清的赊账，按「挂得最久的排最前」（催款优先级）
+  List<Credit> unsettledCredits() {
+    final list = credits.where((c) => !c.settled).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    return list;
+  }
+
+  /// 已结清的赊账，最近结清的排最前
+  List<Credit> settledCredits() {
+    final list = credits.where((c) => c.settled).toList()
+      ..sort((a, b) => (b.settledDate ?? b.date).compareTo(a.settledDate ?? a.date));
+    return list;
+  }
+
+  /// 全部赊账按日期倒序（列表展示用）
+  List<Credit> allCredits() {
+    final list = List<Credit>.of(credits)
+      ..sort((a, b) => b.date.compareTo(a.date));
+    return list;
+  }
+
+  /// 未收回的欠款合计
+  double get unsettledCreditTotal => credits
+      .where((c) => !c.settled)
+      .fold(0.0, (sum, c) => sum + c.amount);
+
+  /// 按客户聚合未结清欠款（「谁一共欠多少」），欠得多的排前面
+  List<CreditByCustomer> creditsByCustomer() {
+    final map = <String, List<Credit>>{};
+    for (final c in unsettledCredits()) {
+      final key = c.customer.trim().isEmpty ? '（未填写姓名）' : c.customer.trim();
+      map.putIfAbsent(key, () => []).add(c);
+    }
+    final out = map.entries.map((e) {
+      final list = e.value;
+      final oldest = list
+          .map((c) => c.date)
+          .reduce((a, b) => a.compareTo(b) <= 0 ? a : b);
+      return CreditByCustomer(
+        customer: e.key,
+        total: list.fold(0.0, (s, c) => s + c.amount),
+        count: list.length,
+        oldestDate: oldest,
+      );
+    }).toList()
+      ..sort((a, b) => b.total.compareTo(a.total));
+    return out;
+  }
+
+  void addCredit(Credit c) {
+    credits.add(c);
+    _persistCredits();
+    notifyListeners();
+  }
+
+  void updateCredit(Credit c) {
+    final i = credits.indexWhere((e) => e.id == c.id);
+    if (i >= 0) credits[i] = c;
+    _persistCredits();
+    notifyListeners();
+  }
+
+  void deleteCredit(String id) {
+    credits.removeWhere((e) => e.id == id);
+    _persistCredits();
+    notifyListeners();
+  }
+
+  /// 标记结清（[date] 默认今天）
+  void settleCredit(String id, {String? date}) {
+    final i = credits.indexWhere((e) => e.id == id);
+    if (i < 0) return;
+    credits[i] = credits[i].copyWith(
+      settled: true,
+      settledDate: date ?? du.todayKey(),
+    );
+    _persistCredits();
+    notifyListeners();
+  }
+
+  /// 撤销结清
+  void unsettleCredit(String id) {
+    final i = credits.indexWhere((e) => e.id == id);
+    if (i < 0) return;
+    credits[i] = credits[i].copyWith(settled: false, clearSettledDate: true);
+    _persistCredits();
+    notifyListeners();
+  }
 
   // ==================== 跨 Tab 预填 ====================
 
@@ -585,19 +698,15 @@ class StoreService extends ChangeNotifier {
 
   // ==================== 备份 / 恢复 ====================
 
-  /// 导出全部数据为单 JSON 字符串（版本 2，含商品 + 分类 + 销售记录）
-  String exportBackup() {
-    final map = {
-      'version': 2,
-      'exportedAt': DateTime.now().toIso8601String(),
-      'products': products.map((p) => p.toJson()).toList(),
-      'categories': categories,
-      'sales': sales.map((k, v) => MapEntry(k, v.toJson())),
-    };
-    return const JsonEncoder.withIndent('  ').convert(map);
-  }
+  /// 导出全部数据为单 JSON 字符串（v3：商品 + 分类 + 销售 + 赊账）
+  String exportBackup() => BackupCodec.encode(
+        products: products,
+        categories: categories,
+        sales: sales,
+        credits: credits,
+      );
 
-  /// 记下「刚刚成功导出过备份」，供首页提醒使用。
+  /// 记下「刚刚成功备份过」，供首页提醒使用。
   void markBackedUp() {
     lastBackupAt = DateTime.now();
     _persistLastBackup();
@@ -621,94 +730,65 @@ class StoreService extends ChangeNotifier {
   /// 「格式不对，恢复失败」——用户以为没动过，实际已经变成「备份的商品 +
   /// 原来的营业额」，下一次编辑就把这个半恢复状态落盘。
   Future<RestoreResult> importBackup(String jsonText) async {
-    final map = _tryDecode(jsonText);
-    if (map is! Map<String, dynamic>) {
+    final payload = BackupCodec.decode(jsonText);
+    if (payload == null) {
       return RestoreResult.fail('这不是备份文件，无法解析');
-    }
-    if (map['version'] != 2) {
-      return RestoreResult.fail('备份文件版本不支持（需要 v2）');
-    }
-    final productsRaw = map['products'];
-    final categoriesRaw = map['categories'];
-    final salesRaw = map['sales'];
-    if (productsRaw is! List || categoriesRaw is! List || salesRaw is! Map) {
-      return RestoreResult.fail('备份文件内容不完整');
-    }
-
-    // ---- 阶段一：全部解析 + 校验，完全不碰现有数据 ----
-    final newProducts = <Product>[];
-    var skipped = 0;
-    for (final e in productsRaw) {
-      if (e is Map<String, dynamic>) {
-        final p = Product.fromJson(e);
-        if (p.id.isEmpty && p.name.isEmpty) {
-          skipped++;
-          continue;
-        }
-        newProducts.add(p);
-      } else {
-        skipped++;
-      }
-    }
-    final newCategories = categoriesRaw
-        .whereType<String>()
-        .where((c) => c != kCategoryAll)
-        .toList();
-    final newSales = <String, DailyRecord>{};
-    for (final entry in salesRaw.entries) {
-      final k = entry.key;
-      final v = entry.value;
-      if (k is! String || v is! Map<String, dynamic>) {
-        skipped++;
-        continue;
-      }
-      final rec = DailyRecord.fromJson(v);
-      rec.date = k; // 以键为准，避免「某天看得到、月度统计算不到」
-      newSales[k] = rec;
     }
 
     // 保护：备份里一个商品都没有，而本地有 → 多半选错了文件，宁可不动
-    if (newProducts.isEmpty && products.isNotEmpty) {
+    if (payload.products.isEmpty && products.isNotEmpty) {
       return RestoreResult.fail('备份里没有任何商品，已取消恢复以保护现有数据');
     }
 
     // ---- 阶段二：存快照 → 整体替换 ----
     final snapshot = exportBackup();
-    products = newProducts;
-    categories = newCategories;
-    sales = newSales;
+    // seeded / 序号不属于业务数据，不在备份里，回滚时单独还原
+    final prevSeeded = seeded;
+    final prevNextSeq = _nextSeq;
+
+    products = payload.products;
+    categories = payload.categories;
+    sales = payload.sales;
+    credits = payload.credits;
     seeded = true;
     _syncSeq();
 
-    // ---- 阶段三：落盘；失败则回滚 ----
+    // ---- 阶段三：落盘；失败则**内存 + 磁盘一起回滚** ----
     try {
-      await _writeProducts();
-      await _writeCategories();
-      await _writeSales();
-      await _writeSeeded();
-      await _writeNextSeq();
+      await _writeAll();
       await _writeRestoreSnapshot(snapshot);
       hasRestoreSnapshot = true;
     } catch (_) {
-      final rollback = _tryDecode(snapshot);
-      if (rollback is Map<String, dynamic>) {
-        products = (rollback['products'] as List)
-            .map((e) => Product.fromJson(e as Map<String, dynamic>))
-            .toList();
-        categories =
-            (rollback['categories'] as List).whereType<String>().toList();
-        sales = (rollback['sales'] as Map).map((k, v) => MapEntry(
-            k as String, DailyRecord.fromJson(v as Map<String, dynamic>)));
+      final rollback = BackupCodec.decode(snapshot);
+      if (rollback != null) {
+        products = rollback.products;
+        categories = rollback.categories;
+        sales = rollback.sales;
+        credits = rollback.credits;
+      }
+      seeded = prevSeeded;
+      _nextSeq = prevNextSeq;
+
+      // 关键：必须把回滚后的内存**重新写回磁盘**。
+      // 上面的多步写入里，前面几步可能已经成功提交（例如商品 / 分类已换成
+      // 备份里的），此时若只回滚内存，磁盘上就留下「新商品 + 旧营业额」的
+      // 撕裂状态，且快照也没写成功 —— 用户杀进程重启后原数据再也找不回来。
+      try {
+        await _writeAll();
+      } catch (_) {
+        // 磁盘彻底不可写：内存至少还是对的，下面提示用户立刻导出备份
+        saveError = '保存失败，请立即导出备份';
       }
       notifyListeners();
-      return RestoreResult.fail('写入失败，已回滚到恢复前的数据');
+      return RestoreResult.fail('写入失败，已回滚到恢复前的数据，请尽快导出备份确认');
     }
 
     notifyListeners();
     return RestoreResult.ok(
       productCount: products.length,
       dayCount: sales.length,
-      skipped: skipped,
+      skipped: payload.skipped,
+      creditCount: credits.length,
     );
   }
 
@@ -722,24 +802,102 @@ class StoreService extends ChangeNotifier {
   }
 
   /// 恢复前预览：只统计数量，不构造模型、不改动任何状态。
-  /// 返回 null 表示这不是一个可识别的 v2 备份文件。
-  BackupPreview? previewBackup(String jsonText) {
-    final map = _tryDecode(jsonText);
-    if (map is! Map<String, dynamic>) return null;
-    if (map['version'] != 2) return null;
-    final p = map['products'];
-    final s = map['sales'];
-    if (p is! List || s is! Map) return null;
-    var items = 0;
-    for (final v in s.values) {
-      if (v is Map && v['items'] is List) items += (v['items'] as List).length;
+  /// 返回 null 表示这不是一个可识别的备份文件。
+  BackupPreview? previewBackup(String jsonText) => BackupCodec.preview(jsonText);
+
+  // ==================== 坚果云同步 ====================
+
+  void updateSyncConfig(NutstoreConfig c) {
+    syncConfig = c;
+    _persistSyncConfig();
+    notifyListeners();
+  }
+
+  /// 测连通性
+  Future<SyncResult> testSync() => NutstoreSync.test(syncConfig);
+
+  /// 上传：本地 → 云端
+  Future<SyncResult> syncUpload() async {
+    final r = await NutstoreSync.upload(syncConfig, exportBackup());
+    if (r.ok) {
+      lastSyncAt = DateTime.now();
+      lastSyncError = null;
+      markBackedUp(); // 云端有备份 = 已备份，首页提醒随之消失
+    } else {
+      lastSyncError = r.message;
     }
-    return BackupPreview(
-      productCount: p.length,
-      dayCount: s.length,
-      itemCount: items,
-      exportedAt: map['exportedAt'] as String?,
-    );
+    _persistSyncLast();
+    notifyListeners();
+    return r;
+  }
+
+  /// 拉取远端备份文本（不落地）。远端不存在返回 null。
+  /// 失败抛 [SyncException]（带一句人话）。
+  Future<RemoteFile?> fetchRemote() async {
+    final f = await NutstoreSync.download(syncConfig);
+    if (f != null) {
+      lastSyncError = null;
+      _persistSyncLast();
+    }
+    return f;
+  }
+
+  /// 把远端文本恢复进本地（内部走 importBackup，因此自带快照 + 可撤销）
+  Future<RestoreResult> applyRemote(String text) async {
+    final r = await importBackup(text);
+    if (r.ok) {
+      lastSyncAt = DateTime.now();
+      lastSyncError = null;
+      _persistSyncLast();
+      pendingRemotePreview = null;
+      _pendingRemoteText = null;
+      notifyListeners();
+    }
+    return r;
+  }
+
+  /// 启动时的自动同步检查。
+  ///
+  /// **只读比对，绝不静默覆盖本地数据**：发现云端比本机新时，把预览挂在
+  /// [pendingRemotePreview] 上由 UI 提示用户，是否恢复完全由用户决定。
+  /// 启动阶段网络异常一律静默（不该因为一次断网就在首页弹错误）。
+  Future<void> checkRemote() async {
+    if (kIsWeb || !syncConfig.autoSync || !syncConfig.isConfigured) return;
+    try {
+      final f = await NutstoreSync.download(syncConfig);
+      if (f == null) return;
+      final preview = previewBackup(f.content);
+      if (preview == null) return;
+
+      final remoteAt = preview.exportedAt == null
+          ? null
+          : DateTime.tryParse(preview.exportedAt!);
+      // 云端导出时间晚于本机上次同步时间 → 说明另一端有新改动
+      final remoteNewer = remoteAt != null &&
+          (lastSyncAt == null || remoteAt.isAfter(lastSyncAt!));
+      if (!remoteNewer) return;
+
+      pendingRemotePreview = preview;
+      _pendingRemoteText = f.content;
+      notifyListeners();
+    } catch (_) {
+      // 静默
+    }
+  }
+
+  void dismissPendingRemote() {
+    pendingRemotePreview = null;
+    _pendingRemoteText = null;
+    notifyListeners();
+  }
+
+  /// 应用启动时挂起的云端备份
+  Future<RestoreResult> applyPendingRemote() async {
+    final text = _pendingRemoteText;
+    if (text == null) {
+      return RestoreResult.fail('没有待恢复的云端备份');
+    }
+    return applyRemote(text);
   }
 
   // ==================== 商品 CSV 导入 / 导出 ====================
@@ -757,6 +915,9 @@ class StoreService extends ChangeNotifier {
   ///
   /// 已有条码 → 覆盖名称/分类/价格等字段，但**不碰库存字段**：库存已不再对外
   /// 使用，保留该字段只是为了避免销毁用户已有的历史数据。
+  ///
+  /// 价格字段为 0 时**保留原值**：CSV 里的空单元格会被解析成 0，直接覆盖会把
+  /// 用户填好的零售价/进价静默清零（0 也不是合法的零售价）。
   ImportResult importProducts(List<Product> incoming) {
     int overwritten = 0, added = 0, skipped = 0;
     for (final p in incoming) {
@@ -771,10 +932,10 @@ class StoreService extends ChangeNotifier {
             ..name = p.name
             ..category = p.category
             ..brand = p.brand
-            ..barcode = p.barcode
-            ..wholesalePrice = p.wholesalePrice
-            ..purchasePrice = p.purchasePrice
-            ..retailPrice = p.retailPrice;
+            ..barcode = p.barcode;
+          if (p.wholesalePrice > 0) existing.wholesalePrice = p.wholesalePrice;
+          if (p.purchasePrice > 0) existing.purchasePrice = p.purchasePrice;
+          if (p.retailPrice > 0) existing.retailPrice = p.retailPrice;
           overwritten++;
           continue;
         }
@@ -816,16 +977,51 @@ class StoreService extends ChangeNotifier {
     });
   }
 
-  // 下面 5 个 `_persist*` 供各变更路径「发射后不管」地调用（自带失败捕获）。
+  // 下面这组 `_persist*` 供各变更路径「发射后不管」地调用（自带失败捕获）。
   void _persistProducts() => _save(_writeProducts);
   void _persistCategories() => _save(_writeCategories);
   void _persistSales() => _save(_writeSales);
+  void _persistCredits() => _save(_writeCredits);
   void _persistSeeded() => _save(_writeSeeded);
   void _persistNextSeq() => _save(_writeNextSeq);
   void _persistLastBackup() => _save(_writeLastBackup);
+  void _persistSyncConfig() => _save(_writeSyncConfig);
+  void _persistSyncLast() => _save(_writeSyncLast);
 
-  // 下面 5 个是真正的写入实现，失败会向上抛，供需要 `await` 的流程
+  // 下面这组是真正的写入实现，失败会向上抛，供需要 `await` 的流程
   // （如恢复备份）使用，以便失败时回滚。
+
+  /// 一次性把全部业务数据写盘。
+  ///
+  /// 恢复流程专用：多步分开写时，中途失败会留下「一半新一半旧」的磁盘状态，
+  /// 所以提交路径和回滚路径都用这一把入口，尽量收敛到「全有或全无」。
+  Future<void> _writeAll() async {
+    final steps = <Future<void> Function()>[
+      _writeProducts,
+      _writeCategories,
+      _writeSales,
+      _writeCredits,
+      _writeSeeded,
+      _writeNextSeq,
+    ];
+    for (var i = 0; i < steps.length; i++) {
+      if (debugFailWriteStep == i + 1) {
+        // 只失败一次：回滚时的第二次写入必须能真正落盘
+        debugFailWriteStep = 0;
+        throw StateError('注入的写盘失败（仅测试）');
+      }
+      await steps[i]();
+    }
+  }
+
+  /// 仅供测试：模拟 `_writeAll()` 执行到第 n 步时写盘失败。
+  ///
+  /// 用来验证恢复流程的失败回滚确实是**内存 + 磁盘一起回滚**，
+  /// 而不是只把内存改回去、把「一半新一半旧」留在磁盘上。
+  /// 设为 0（默认）表示不注入失败。
+  @visibleForTesting
+  int debugFailWriteStep = 0;
+
   Future<void> _writeProducts() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -841,6 +1037,12 @@ class StoreService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
         _kSales, jsonEncode(sales.map((k, v) => MapEntry(k, v.toJson()))));
+  }
+
+  Future<void> _writeCredits() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _kCredits, jsonEncode(credits.map((c) => c.toJson()).toList()));
   }
 
   Future<void> _writeSeeded() async {
@@ -863,43 +1065,16 @@ class StoreService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kRestoreSnapshot, text);
   }
-}
 
-/// 恢复前预览（不改动任何数据）
-class BackupPreview {
-  BackupPreview({
-    required this.productCount,
-    required this.dayCount,
-    required this.itemCount,
-    this.exportedAt,
-  });
+  Future<void> _writeSyncConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSyncConfig, jsonEncode(syncConfig.toJson()));
+  }
 
-  final int productCount;
-  final int dayCount;
-  final int itemCount;
-  final String? exportedAt; // 备份文件的导出时间（ISO 字符串，可能为 null）
-}
-
-/// 恢复备份的结果
-class RestoreResult {
-  RestoreResult.ok({
-    required this.productCount,
-    required this.dayCount,
-    required this.skipped,
-  })  : ok = true,
-        reason = '';
-
-  RestoreResult.fail(this.reason)
-      : ok = false,
-        productCount = 0,
-        dayCount = 0,
-        skipped = 0;
-
-  final bool ok;
-  final String reason; // 失败原因（面向用户的一句话）
-  final int productCount; // 恢复后的商品数
-  final int dayCount; // 恢复后的记账天数
-  final int skipped; // 跳过的坏行数
+  Future<void> _writeSyncLast() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSyncLast, lastSyncAt?.toIso8601String() ?? '');
+  }
 }
 
 /// 导入结果
