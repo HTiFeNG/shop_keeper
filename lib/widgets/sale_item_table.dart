@@ -153,7 +153,7 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
                 if (widget.brand.trim().isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(left: 2, top: 2),
-                    child: BrandTag(widget.brand, dense: true),
+                    child: BrandTag(widget.brand),
                   ),
               ],
             ),
@@ -260,7 +260,8 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
     );
   }
 
-  /// 计价方式切换（零售价 ⇄ 批发价），逻辑与手机端卡片一致
+  /// 计价方式切换（零售价 ⇄ 批发价），逻辑与手机端卡片一致。
+  /// 视觉规格与品牌标签共用 `kTag*` 常量，两端看起来才是同一个东西。
   Widget _priceModeChip() {
     final it = widget.item;
     final wholesale = it.priceMode == SalePriceMode.wholesale;
@@ -270,22 +271,21 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
           : '按零售价 ¥${fmtPrice(it.unitPrice)}，'
               '点一下改按批发价 ¥${fmtPrice(it.wholesalePrice ?? 0)}',
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kTagRadius),
         onTap: () => widget.onChanged(it.withPriceMode(
             wholesale ? SalePriceMode.retail : SalePriceMode.wholesale)),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          padding: kTagPadding,
           decoration: BoxDecoration(
             color: wholesale ? AppTheme.orangeSurface : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(kTagRadius),
             border: Border.all(
               color: wholesale ? AppTheme.primaryText : AppTheme.divider,
             ),
           ),
           child: Text(
             wholesale ? '批发' : '零售',
-            style: TextStyle(
-              fontSize: AppTheme.fontCaption,
+            style: kTagTextStyle.copyWith(
               fontWeight: FontWeight.w600,
               color: wholesale ? AppTheme.primaryText : AppTheme.textSecondary,
             ),

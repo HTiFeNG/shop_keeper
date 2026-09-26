@@ -339,7 +339,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                               ConstrainedBox(
                                 constraints:
                                     const BoxConstraints(maxWidth: 96),
-                                child: BrandTag(store.brandOf(it), dense: true),
+                                child: BrandTag(store.brandOf(it)),
                               ),
                             ],
                           ],

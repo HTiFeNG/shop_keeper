@@ -59,38 +59,28 @@ class CategoryChips extends StatelessWidget {
           ),
           // 「＋ 分类」「管理」**固定在右侧**，不跟着分类列表滚。
           //
-          // 原来这两个入口排在滚动区末尾，分类一多就被推到屏幕外 ——
+          // 用纯图标按钮，和顶栏的「备份」「查账」是同一套规格：带文字的
+          // chip 又宽又抢眼，一行里挤几个彩色块很吵。语义交给图标本身
+          // （＋ / 调节滑块）和 tooltip。
+          //
+          // 另外这两个入口以前排在滚动区末尾，分类一多就被推到屏幕外 ——
           // 在 360dp 屏上「管理」的中心点落在 x=375.9，用户根本点不到。
-          // 这个坑是组件测试里 hit test 直接失败才暴露出来的：测试点它，
-          // 提示「该位置在渲染树边界之外」。
-          Padding(
-            padding: const EdgeInsets.only(left: 2),
-            child: _actionChip(Icons.add, '分类', onAdd),
+          IconButton(
+            tooltip: '新建分类',
+            icon: const Icon(Icons.add, color: AppTheme.primary),
+            onPressed: onAdd,
           ),
           if (categories.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(left: 2, right: 12),
-              child: _actionChip(
-                  Icons.tune, '管理', () => openCategoryManager(context)),
-            )
-          else
-            const SizedBox(width: 12),
+              padding: const EdgeInsets.only(right: 8),
+              child: IconButton(
+                tooltip: '管理分类（拖动排序 / 改名 / 删除）',
+                icon: const Icon(Icons.tune, color: AppTheme.primary),
+                onPressed: () => openCategoryManager(context),
+              ),
+            ),
         ],
       ),
-    );
-  }
-
-  /// 右侧固定区的动作 chip（＋分类 / 管理）
-  Widget _actionChip(IconData icon, String label, VoidCallback onTap) {
-    return ActionChip(
-      avatar: Icon(icon, size: 16, color: AppTheme.primary),
-      label: Text(label,
-          style: const TextStyle(
-              fontSize: AppTheme.fontCaption, color: AppTheme.primaryText)),
-      backgroundColor: Colors.white,
-      shape: StadiumBorder(
-          side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.4))),
-      onPressed: onTap,
     );
   }
 

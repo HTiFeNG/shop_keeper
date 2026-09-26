@@ -33,7 +33,8 @@ void main() {
     expect(find.text('商品管理'), findsOneWidget);
 
     // 打开新增商品表单
-    await tester.tap(find.text('新增'));
+    // 顶栏动作是纯图标按钮（靠 tooltip 说明用途），不再有「新增」文字
+    await tester.tap(find.byIcon(Icons.add_circle));
     await tester.pumpAndSettle();
     expect(find.text('新增商品'), findsOneWidget); // AppBar 标题
     expect(find.text('请输入商品名称'), findsOneWidget); // 表单已渲染
@@ -406,10 +407,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.inventory_2_outlined));
     await tester.pumpAndSettle();
 
-    // 点 chip 本身而不是它的文字：tap 纯 Text 时 flutter_test 会警告
-    // 「命中位置不在该 widget 上」（RenderParagraph 不参与 hit test），
-    // 功能虽然正常，但没必要留一堆噪音。
-    await tester.tap(find.widgetWithText(ActionChip, '管理'));
+    // 分类栏的「管理」现在是纯图标按钮（带 tooltip），点图标本身
+    await tester.tap(find.byIcon(Icons.tune));
     await tester.pumpAndSettle();
 
     expect(find.text('管理分类'), findsOneWidget);

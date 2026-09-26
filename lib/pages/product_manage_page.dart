@@ -541,10 +541,9 @@ class _ProductManagePageState extends State<ProductManagePage> {
   /// 1. **标题不再被挤断**。原来是自绘 Row，标题包在 `Flexible + 省略号` 里，
   ///    右侧动作一多就被压成「商品…」。AppBar 的 title 有专门的弹性布局，
   ///    动作再宽也优先保住标题。
-  /// 2. **按钮不再比标题还重**。「新增 / 批量」原来定在 48dp 高，视觉分量压过
-  ///    标题。收到 36dp 后与顶栏图标按钮齐平；命中区**没有变小** ——
-  ///    主题里 `materialTapTargetSize: padded` 会在按钮外围补足到 48dp。
-  ///    两按钮间距同时从 8 拉到 12，进一步降低「新增」和「批量」点串的概率。
+  /// 2. **动作统一成纯图标按钮**。带文字的「新增 / 批量」又宽又抢眼，排在一起
+  ///    视觉很吵；现在和顶栏的「备份」是同一套规格（标准 IconButton + tooltip），
+  ///    顺带把更多横向空间还给标题。主操作「新增」用橙色点出来，其余跟随默认色。
   PreferredSizeWidget _header() => AppBar(
         title: const Text('商品管理',
             maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -595,34 +594,16 @@ class _ProductManagePageState extends State<ProductManagePage> {
                   ),
               ],
             ),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.primaryText,
-                side: const BorderSide(color: AppTheme.primary),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                minimumSize: const Size(0, 36),
-                tapTargetSize: MaterialTapTargetSize.padded,
-              ),
+            IconButton(
+              tooltip: '批量操作（多选后移动分类 / 删除）',
+              icon: const Icon(Icons.checklist),
               onPressed: _enterBatchMode,
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.checklist, size: 16),
-                  SizedBox(width: 4),
-                  Text('批量', style: TextStyle(fontSize: 13)),
-                ],
-              ),
             ),
-            const SizedBox(width: 12),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                minimumSize: const Size(0, 36),
-                tapTargetSize: MaterialTapTargetSize.padded,
-              ),
+            IconButton(
+              tooltip: '新增商品',
+              // 主操作用橙色点出来；其余动作跟随默认图标色
+              icon: const Icon(Icons.add_circle, color: AppTheme.primary),
               onPressed: () => _openEdit(),
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('新增', style: TextStyle(fontSize: 13)),
             ),
           ],
           const SizedBox(width: 8),
