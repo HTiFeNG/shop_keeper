@@ -55,12 +55,15 @@ class _CategoryManagerSheet extends StatefulWidget {
 }
 
 class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
-  late List<String> _order = [...widget.categories];
+  late final List<String> _order = [...widget.categories];
 
+  /// 拖拽落位。
+  ///
+  /// 用的是 [ReorderableListView.onReorderItem]（Flutter 3.41 起取代 onReorder）。
+  /// 两者的下标语义**不一样**：旧 onReorder 给的是「移除前的插入位」，往后拖要
+  /// 自己减 1；新 onReorderItem 已经按移除 oldIndex 之后修正过，直接插即可。
   void _onReorder(int oldIndex, int newIndex) {
     setState(() {
-      // ReorderableListView 给的 newIndex 是「移除前」的插入位，往后拖要减 1
-      if (newIndex > oldIndex) newIndex -= 1;
       _order.insert(newIndex, _order.removeAt(oldIndex));
     });
     widget.onReorder(List.of(_order));
@@ -179,7 +182,7 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
                   // 关掉默认的「长按整行拖动」，改用右侧显式手柄
                   buildDefaultDragHandles: false,
                   itemCount: _order.length,
-                  onReorder: _onReorder,
+                  onReorderItem: _onReorder,
                   itemBuilder: (ctx, i) => _row(i),
                 ),
               ),
