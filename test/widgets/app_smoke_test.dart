@@ -406,7 +406,10 @@ void main() {
     await tester.tap(find.byIcon(Icons.inventory_2_outlined));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('管理'));
+    // 点 chip 本身而不是它的文字：tap 纯 Text 时 flutter_test 会警告
+    // 「命中位置不在该 widget 上」（RenderParagraph 不参与 hit test），
+    // 功能虽然正常，但没必要留一堆噪音。
+    await tester.tap(find.widgetWithText(ActionChip, '管理'));
     await tester.pumpAndSettle();
 
     expect(find.text('管理分类'), findsOneWidget);

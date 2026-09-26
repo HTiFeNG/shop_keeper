@@ -1,9 +1,10 @@
-// 商品列表项：品牌标签、可直接点的分类入口、批量模式下的行为差异。
+// 商品列表项：品牌的呈现方式、可直接点的分类入口、批量模式下的行为差异。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shop_keeper/models/product.dart';
-import 'package:shop_keeper/widgets/brand_tag.dart';
 import 'package:shop_keeper/widgets/product_tile.dart';
+
+import '../helpers/store_test_env.dart';
 
 void main() {
   Future<void> pumpTile(
@@ -12,6 +13,10 @@ void main() {
     VoidCallback? onChangeCategory,
     VoidCallback? onSelectToggle,
   }) async {
+    // 用 360×640 的真实小屏。默认测试视口是 800×600，比真机宽得多，
+    // 会**掩盖**商品行右侧空间不足导致的溢出 —— 这个坑真的漏过一次
+    // （在 app_smoke 里才被 360 视口抓到）。
+    useSmallPhone(tester);
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: ProductTile(
@@ -25,23 +30,24 @@ void main() {
     ));
   }
 
-  testWidgets('品牌以标签形式贴在商品名下方', (tester) async {
+  testWidgets('品牌跟在条码同一行显示', (tester) async {
     await pumpTile(
       tester,
       product: Product(
           id: 'SP0001', name: '矿泉水', brand: '农夫山泉', retailPrice: 2),
     );
     expect(find.text('矿泉水'), findsOneWidget);
-    expect(find.byType(BrandTag), findsOneWidget);
-    expect(find.text('农夫山泉'), findsOneWidget);
+    // 品牌**不是**独立标签：这一列在 360dp 屏上只有约 100dp，
+    // 品牌 + 分类两个标签并排会直接溢出 24px。它并进「条码 · 品牌」一行。
+    expect(find.textContaining('农夫山泉'), findsOneWidget);
   });
 
-  testWidgets('没有品牌时不渲染空标签', (tester) async {
+  testWidgets('没有品牌时那一行只显示条码，不会多出空位', (tester) async {
     await pumpTile(
       tester,
       product: Product(id: 'SP0001', name: '矿泉水', retailPrice: 2),
     );
-    expect(find.byType(BrandTag), findsNothing);
+    expect(find.text('条码：—'), findsOneWidget);
   });
 
   testWidgets('点分类标签直接触发改分类（不必先进批量模式）', (tester) async {
