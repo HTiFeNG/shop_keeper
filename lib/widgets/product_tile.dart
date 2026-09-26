@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
-import 'brand_tag.dart';
 
-/// 商品列表项：商品名、条码、品牌 + 可点分类、红色零售价、星标、「记一笔」快捷按钮。
+/// 商品列表项：商品名、条码 · 品牌、**可点分类标签**、红色零售价、星标、「记一笔」。
 ///
 /// - 点击整行 → 编辑；垃圾桶 → 删除（带确认）；
 /// - **点分类标签 → 直接弹分类选择面板**（不必再进批量模式，见 [onChangeCategory]）；
@@ -103,15 +102,24 @@ class ProductTile extends StatelessWidget {
                 color: has ? AppTheme.primaryText : AppTheme.textSecondary,
               ),
               const SizedBox(width: 4),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 110),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: has ? AppTheme.primaryText : AppTheme.textSecondary,
+              // 外面套 Flexible 才是防溢出的关键：这一行在 360dp 屏上只有
+              // 约 100dp 可用，空间不够时先让文字收缩（省略号），标签本身
+              // 绝不被顶出边界。
+              // 外层 Column 的 crossAxisAlignment 给的是「0..可用宽」这个
+              // **有界**约束，所以这里的 Flexible 合法（无界约束下会抛异常）。
+              Flexible(
+                child: ConstrainedBox(
+                  // 上限 52 ≈ 4 个汉字，避免分类名太长时把标签撑得很宽
+                  constraints: const BoxConstraints(maxWidth: 52),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color:
+                          has ? AppTheme.primaryText : AppTheme.textSecondary,
+                    ),
                   ),
                 ),
               ),
@@ -176,29 +184,30 @@ class ProductTile extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
+                    // 条码 + 品牌合成一行纯文本。
+                    //
+                    // 品牌**没有**在这里做成标签：360dp 屏上这一侧只有约 100dp
+                    // 可用宽度（右侧三个 48dp 图标按钮吃掉了 144dp），
+                    // 「品牌标签 + 分类标签」并排必然溢出 —— 组件测试里实测
+                    // 溢出 24px。合成一行 + 省略号才是稳的。
                     Text(
-                      product.barcode.isEmpty
-                          ? '条码：—'
-                          : '条码：${product.barcode}',
+                      [
+                        if (product.barcode.isEmpty)
+                          '条码：—'
+                        else
+                          '条码：${product.barcode}',
+                        if (product.brand.isNotEmpty) product.brand,
+                      ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                           fontSize: AppTheme.fontCaption,
                           color: AppTheme.textSecondary),
                     ),
-                    if (product.brand.isNotEmpty ||
-                        product.category.isNotEmpty ||
-                        _categoryTappable) ...[
+                    // 分类标签独占一行 —— 它是可点的，别跟别的文字抢空间
+                    if (product.category.isNotEmpty || _categoryTappable) ...[
                       const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          if (product.brand.isNotEmpty) ...[
-                            Flexible(child: BrandTag(product.brand)),
-                            const SizedBox(width: 6),
-                          ],
-                          Flexible(child: _categoryChip()),
-                        ],
-                      ),
+                      _categoryChip(),
                     ],
                   ],
                 ),

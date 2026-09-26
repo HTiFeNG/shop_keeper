@@ -42,53 +42,55 @@ class CategoryChips extends StatelessWidget {
     return SizedBox(
       // 48dp：Chip 自身被外部高度压到 36dp 时，点起来很费劲
       height: 48,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
         children: [
-          _chip(context, kCategoryAll),
-          for (final c in categories) _chip(context, c),
-          if (showUncategorized)
-            _chip(context, kCategoryNone, count: uncategorizedCount),
-          // 添加分类
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: ActionChip(
-              avatar: const Icon(Icons.add, size: 16, color: AppTheme.primary),
-              label: const Text('分类',
-                  style: TextStyle(
-                      fontSize: AppTheme.fontCaption,
-                      color: AppTheme.primaryText)),
-              backgroundColor: Colors.white,
-              shape: StadiumBorder(
-                  side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.4))),
-              onPressed: onAdd,
+          // 分类本身的横向滚动区
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(left: 12),
+              children: [
+                _chip(context, kCategoryAll),
+                for (final c in categories) _chip(context, c),
+                if (showUncategorized)
+                  _chip(context, kCategoryNone, count: uncategorizedCount),
+              ],
             ),
           ),
-          // 管理入口：改名 / 排序 / 删除原先只能长按触发，而长按既没有视觉
-          // 提示、又会和横滑手势打架，对中老年用户等于不存在。
+          // 「＋ 分类」「管理」**固定在右侧**，不跟着分类列表滚。
           //
-          // 注意它现在**始终显示**（原先只在选中自定义分类时才出现）——
-          // 否则选中「全部」时想整理分类，用户根本找不到入口。
+          // 原来这两个入口排在滚动区末尾，分类一多就被推到屏幕外 ——
+          // 在 360dp 屏上「管理」的中心点落在 x=375.9，用户根本点不到。
+          // 这个坑是组件测试里 hit test 直接失败才暴露出来的：测试点它，
+          // 提示「该位置在渲染树边界之外」。
+          Padding(
+            padding: const EdgeInsets.only(left: 2),
+            child: _actionChip(Icons.add, '分类', onAdd),
+          ),
           if (categories.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              child: ActionChip(
-                avatar:
-                    const Icon(Icons.tune, size: 16, color: AppTheme.primary),
-                label: const Text('管理',
-                    style: TextStyle(
-                        fontSize: AppTheme.fontCaption,
-                        color: AppTheme.primaryText)),
-                backgroundColor: Colors.white,
-                shape: StadiumBorder(
-                    side: BorderSide(
-                        color: AppTheme.primary.withValues(alpha: 0.4))),
-                onPressed: () => openCategoryManager(context),
-              ),
-            ),
+              padding: const EdgeInsets.only(left: 2, right: 12),
+              child: _actionChip(
+                  Icons.tune, '管理', () => openCategoryManager(context)),
+            )
+          else
+            const SizedBox(width: 12),
         ],
       ),
+    );
+  }
+
+  /// 右侧固定区的动作 chip（＋分类 / 管理）
+  Widget _actionChip(IconData icon, String label, VoidCallback onTap) {
+    return ActionChip(
+      avatar: Icon(icon, size: 16, color: AppTheme.primary),
+      label: Text(label,
+          style: const TextStyle(
+              fontSize: AppTheme.fontCaption, color: AppTheme.primaryText)),
+      backgroundColor: Colors.white,
+      shape: StadiumBorder(
+          side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.4))),
+      onPressed: onTap,
     );
   }
 

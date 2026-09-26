@@ -455,7 +455,13 @@ void main() {
     });
     await pumpApp(tester);
 
-    expect(find.text('矿泉水'), findsOneWidget);
+    // 商品名在明细卡片里是输入框（EditableText），而首页「最近常卖」快捷条
+    // 也有一份同名文字 —— 所以限定在明细卡片内断言，别跟别处混。
+    expect(
+      find.descendant(
+          of: find.byType(SaleItemCard), matching: find.text('矿泉水')),
+      findsOneWidget,
+    );
     expect(find.text('农夫山泉'), findsOneWidget,
         reason: '老明细没有品牌快照，也要能按 productId 回查显示出来');
     expect(tester.takeException(), isNull);

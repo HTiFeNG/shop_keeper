@@ -322,7 +322,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                         // 没有品牌就没法确认查到的是不是自己要找的那一笔
                         Row(
                           children: [
-                            Flexible(
+                            Expanded(
                               child: Text(
                                 it.name.isEmpty ? '未命名商品' : it.name,
                                 maxLines: 1,
@@ -331,10 +331,16 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                                     fontSize: 15, fontWeight: FontWeight.w600),
                               ),
                             ),
+                            // 品牌按内容取宽（上限 96dp），名称用 Expanded 吃掉
+                            // 剩余。两个 Flexible 会**均分**宽度，把名称白白
+                            // 砍掉一半。
                             if (store.brandOf(it).isNotEmpty) ...[
                               const SizedBox(width: 6),
-                              Flexible(
-                                  child: BrandTag(store.brandOf(it), dense: true)),
+                              ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 96),
+                                child: BrandTag(store.brandOf(it), dense: true),
+                              ),
                             ],
                           ],
                         ),
