@@ -393,8 +393,8 @@ class _SalesPageState extends State<SalesPage>
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('营业额', style: AppTheme.pageTitle),
-        centerTitle: false,
+        // 标题字号由 AppBarTheme 统一给，页面不再自己指定
+        title: const Text('营业额'),
         actions: [
           IconButton(
             tooltip: '查账（按商品名或金额翻历史明细）',
@@ -520,6 +520,7 @@ class _SalesPageState extends State<SalesPage>
                   SaleItemTable(
                     items: items,
                     keyOf: _rowKey,
+                    brandOf: store.brandOf,
                     onChanged: _updateItem,
                     onDelete: _deleteItem,
                   )
@@ -528,6 +529,9 @@ class _SalesPageState extends State<SalesPage>
                     SaleItemCard(
                       key: _rowKey(item.id),
                       item: item,
+                      // 品牌由 store 统一解析：新记录用成交快照，
+                      // 老记录按 productId 回查商品库（见 StoreService.brandOf）
+                      brand: store.brandOf(item),
                       onChanged: _updateItem,
                       onDelete: () => _deleteItem(item),
                     ),

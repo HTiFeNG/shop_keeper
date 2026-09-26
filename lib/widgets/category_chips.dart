@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../services/store_service.dart';
 import '../theme/app_theme.dart';
+import 'category_manager_sheet.dart';
 
 /// 手机端顶部分类横滑 Chips（替代左侧栏）。
 ///
-/// - 顶部固定「全部」+ 自定义分类 +「未分类」（存在时）+「＋」添加入口；
-/// - 长按自定义分类 → 上移 / 下移 / 编辑 / 删除菜单。
+/// - 顶部固定「全部」+ 自定义分类 +「未分类」（存在时）+「＋ 分类」新建入口；
+/// - 右侧「管理」打开分类管理面板：拖拽排序 + 改名 + 删除（见
+///   [showCategoryManager]）。原先的「上移 / 下移」一次只挪一格，已废弃。
 class CategoryChips extends StatelessWidget {
   const CategoryChips({
     super.key,
@@ -16,10 +18,9 @@ class CategoryChips extends StatelessWidget {
     required this.uncategorizedCount,
     required this.onSelect,
     required this.onAdd,
-    required this.onEdit,
+    required this.onRename,
     required this.onDelete,
-    required this.onMoveUp,
-    required this.onMoveDown,
+    required this.onReorder,
   });
 
   final List<String> categories;
@@ -28,10 +29,13 @@ class CategoryChips extends StatelessWidget {
   final int uncategorizedCount;
   final ValueChanged<String> onSelect;
   final VoidCallback onAdd;
-  final ValueChanged<String> onEdit;
+
+  /// 重命名分类；返回 false 表示重名（面板会提示并放弃本次改名）
+  final bool Function(String oldName, String newName) onRename;
   final ValueChanged<String> onDelete;
-  final ValueChanged<String> onMoveUp;
-  final ValueChanged<String> onMoveDown;
+
+  /// 拖拽排序后一次性提交新的分类顺序
+  final void Function(List<String> ordered) onReorder;
 
   @override
   Widget build(BuildContext context) {
@@ -61,10 +65,12 @@ class CategoryChips extends StatelessWidget {
               onPressed: onAdd,
             ),
           ),
-          // 可见的「管理分类」入口。
-          // 改名/排序/删除原先只能长按触发，而且长按还会和横滑手势打架，
-          // 对中老年用户来说这个功能等于不存在。
-          if (!_isFixed(selected))
+          // 管理入口：改名 / 排序 / 删除原先只能长按触发，而长按既没有视觉
+          // 提示、又会和横滑手势打架，对中老年用户等于不存在。
+          //
+          // 注意它现在**始终显示**（原先只在选中自定义分类时才出现）——
+          // 否则选中「全部」时想整理分类，用户根本找不到入口。
+          if (categories.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               child: ActionChip(
@@ -78,9 +84,7 @@ class CategoryChips extends StatelessWidget {
                 shape: StadiumBorder(
                     side: BorderSide(
                         color: AppTheme.primary.withValues(alpha: 0.4))),
-                onPressed: () => _showMenu(context, selected,
-                    index: categories.indexOf(selected),
-                    total: categories.length),
+                onPressed: () => openCategoryManager(context),
               ),
             ),
         ],
@@ -88,8 +92,13 @@ class CategoryChips extends StatelessWidget {
     );
   }
 
-  static bool _isFixed(String name) =>
-      name == kCategoryAll || name == kCategoryNone;
+  void openCategoryManager(BuildContext context) => showCategoryManager(
+        context,
+        categories: categories,
+        onReorder: onReorder,
+        onRename: onRename,
+        onDelete: onDelete,
+      );
 
   Widget _chip(BuildContext context, String name, {int? count}) {
     final sel = name == selected;
@@ -111,62 +120,6 @@ class CategoryChips extends StatelessWidget {
           showCheckmark: sel,
           onSelected: (_) => onSelect(name),
         ),
-    );
-  }
-
-  /// 分类管理菜单（上移 / 下移 / 编辑 / 删除）
-  void _showMenu(BuildContext context, String name,
-      {required int index, required int total}) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('分类：$name',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            ListTile(
-              enabled: index > 0,
-              leading: const Icon(Icons.arrow_upward),
-              title: const Text('上移'),
-              onTap: () {
-                Navigator.pop(ctx);
-                onMoveUp(name);
-              },
-            ),
-            ListTile(
-              enabled: index < total - 1,
-              leading: const Icon(Icons.arrow_downward),
-              title: const Text('下移'),
-              onTap: () {
-                Navigator.pop(ctx);
-                onMoveDown(name);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('编辑分类'),
-              onTap: () {
-                Navigator.pop(ctx);
-                onEdit(name);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: AppTheme.priceRed),
-              title: const Text('删除分类',
-                  style: TextStyle(color: AppTheme.priceRed)),
-              onTap: () {
-                Navigator.pop(ctx);
-                onDelete(name);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
     );
   }
 }

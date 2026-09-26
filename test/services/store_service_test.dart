@@ -318,4 +318,122 @@ void main() {
           '[]');
     });
   });
+
+  group('分类：改单个商品 + 拖拽排序', () {
+    test('setCategory 改单个商品的分类', () {
+      final store = StoreService.instance;
+      store.addProduct(Product(id: 'SP0001', name: '矿泉水', category: '饮料'));
+
+      store.setCategory('SP0001', '酒水');
+      expect(store.findById('SP0001')!.category, '酒水');
+
+      // 归到「未分类」
+      store.setCategory('SP0001', kCategoryNone);
+      expect(store.findById('SP0001')!.category, kCategoryNone);
+    });
+
+    test('setCategory 对不存在的商品是空操作，不抛异常', () {
+      final store = StoreService.instance;
+      expect(() => store.setCategory('SP9999', '饮料'), returnsNormally);
+    });
+
+    test('reorderCategories 按给定顺序整体重排', () {
+      final store = StoreService.instance;
+      for (final c in ['饮料', '零食', '日化']) {
+        store.addCategory(c);
+      }
+      store.reorderCategories(['日化', '饮料', '零食']);
+      expect(store.categories, ['日化', '饮料', '零食']);
+    });
+
+    test('reorderCategories 收到残缺/重复列表时不会把分类弄丢', () {
+      final store = StoreService.instance;
+      for (final c in ['饮料', '零食', '日化']) {
+        store.addCategory(c);
+      }
+      // 只提到一个，且重复两次（模拟拖拽回调给出的异常列表）
+      store.reorderCategories(['日化', '日化', '不存在的分类']);
+      expect(store.categories.length, 3);
+      expect(store.categories.first, '日化');
+      // 没被提到的按原顺序补在后面，一个都没丢
+      expect(store.categories.toSet(), {'饮料', '零食', '日化'});
+    });
+
+    test('moveCategory 仍可用（保留的旧 API）', () {
+      final store = StoreService.instance;
+      for (final c in ['A', 'B', 'C']) {
+        store.addCategory(c);
+      }
+      store.moveCategory('C', -1);
+      expect(store.categories, ['A', 'C', 'B']);
+      // 越界移动是空操作
+      store.moveCategory('A', -1);
+      expect(store.categories, ['A', 'C', 'B']);
+    });
+  });
+
+  group('明细行的品牌', () {
+    test('新记录用成交时的品牌快照', () {
+      final store = StoreService.instance;
+      final p = Product(
+          id: 'SP0001', name: '矿泉水', brand: '农夫山泉', retailPrice: 2);
+      store.addProduct(p);
+      store.recordSaleFromProduct('2026-07-01', p);
+
+      final it = store.itemsOf('2026-07-01').single;
+      expect(it.brand, '农夫山泉');
+      expect(store.brandOf(it), '农夫山泉');
+    });
+
+    test('老记录没有品牌快照时，回查商品库当前品牌兜底', () {
+      final store = StoreService.instance;
+      store.addProduct(Product(
+          id: 'SP0001', name: '矿泉水', brand: '娃哈哈', retailPrice: 2));
+      // 手工造一条 4.0.0 之前的老明细：有 productId，但没有 brand 快照
+      store.upsertSaleItem(
+          '2026-07-01',
+          SaleItem(
+              id: 'old1',
+              name: '矿泉水',
+              quantity: 1,
+              unitPrice: 2,
+              totalPrice: 2,
+              productId: 'SP0001'));
+
+      final it = store.itemsOf('2026-07-01').single;
+      expect(it.brand, '');
+      expect(store.brandOf(it), '娃哈哈', reason: '老数据要能显示品牌，不然升级后等于没做');
+    });
+
+    test('纯手输行（没有 productId）查不到品牌，返回空串', () {
+      final store = StoreService.instance;
+      final it = SaleItem(id: 'm1', name: '散装', quantity: 1);
+      expect(store.brandOf(it), '');
+    });
+
+    test('商品被删后品牌回查失败，不会崩', () {
+      final store = StoreService.instance;
+      final it = SaleItem(
+          id: 'x1',
+          name: '矿泉水',
+          quantity: 1,
+          productId: 'SP0001'); // 商品库里根本没有这个 id
+      expect(store.brandOf(it), '');
+    });
+
+    test('品牌快照随备份一起走', () async {
+      final store = StoreService.instance;
+      final p = Product(
+          id: 'SP0001', name: '矿泉水', brand: '农夫山泉', retailPrice: 2);
+      store.addProduct(p);
+      store.recordSaleFromProduct('2026-07-01', p);
+
+      final backup = store.exportBackup();
+      store.products = [];
+      store.sales = {};
+      final r = await store.importBackup(backup);
+      expect(r.ok, isTrue);
+      expect(store.itemsOf('2026-07-01').single.brand, '农夫山泉');
+    });
+  });
 }

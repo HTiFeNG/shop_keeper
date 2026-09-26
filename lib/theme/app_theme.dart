@@ -79,6 +79,14 @@ abstract final class AppTheme {
   /// 页标题
   static const double fontPageTitle = 22;
 
+  /// 顶栏（AppBar）标题
+  ///
+  /// 统一收在这里的原因：改版前 4 个页面各自写 `style: AppTheme.pageTitle`
+  /// （22px），而编辑页 / 扫码页用主题默认的 18px —— 同一个 App 里并存两套
+  /// 标题大小，切页时肉眼可见地跳一下。现在所有 AppBar 只写 `Text('标题')`，
+  /// 字号由 [AppBarTheme] 统一给。
+  static const double fontAppBarTitle = 20;
+
   /// 区块标题
   static const double fontSectionTitle = 17;
 
@@ -106,6 +114,13 @@ abstract final class AppTheme {
 
   static const TextStyle pageTitle = TextStyle(
     fontSize: fontPageTitle,
+    fontWeight: FontWeight.w600,
+    color: textPrimary,
+  );
+
+  /// AppBar 标题样式（全站唯一来源，各页不要自行指定字号）
+  static const TextStyle appBarTitle = TextStyle(
+    fontSize: fontAppBarTitle,
     fontWeight: FontWeight.w600,
     color: textPrimary,
   );
@@ -172,11 +187,16 @@ abstract final class AppTheme {
         backgroundColor: Colors.white,
         foregroundColor: textPrimary,
         elevation: 0.5,
-        titleTextStyle: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-          color: textPrimary,
-        ),
+        // 滚动内容顶到顶栏下方时不要给顶栏染色：全 App 只有一套浅色底，
+        // 一旦 Material 3 按默认给顶栏叠一层 surfaceTint，切页时顶部
+        // 会出现深浅不一的色块，正是「风格不统一」的来源之一。
+        scrolledUnderElevation: 0.5,
+        surfaceTintColor: Colors.transparent,
+        // 标题统一左对齐：桌面端与安卓大屏都更自然，也和商品页原来的
+        // 自绘标题（左对齐）一致
+        centerTitle: false,
+        titleSpacing: 16,
+        titleTextStyle: appBarTitle,
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: Colors.white,

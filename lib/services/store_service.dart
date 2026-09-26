@@ -275,6 +275,29 @@ class StoreService extends ChangeNotifier {
     return null;
   }
 
+  /// 明细行要显示的品牌。
+  ///
+  /// 优先用成交时的快照；快照为空（4.0.0 之前记的老数据、或手输行）时，
+  /// 按 [SaleItem.productId] 回查商品库当前品牌兜底 —— 这样刚升级上来的用户
+  /// 打开营业额页就能看到品牌，而不是要等新记录才生效。
+  /// 纯手输行（productId 为 null）没有任何品牌可查，返回空串。
+  String brandOf(SaleItem item) {
+    if (item.brand.isNotEmpty) return item.brand;
+    final id = item.productId;
+    if (id == null) return '';
+    return findById(id)?.brand ?? '';
+  }
+
+  /// 改单个商品的分类（商品列表里直接点分类标签就能改）。
+  void setCategory(String productId, String category) {
+    final p = findById(productId);
+    if (p == null) return;
+    if (p.category == category) return;
+    p.category = category;
+    _persistProducts();
+    notifyListeners();
+  }
+
   /// 分配一个编号但不立即落盘（批量导入时用，避免每行写一次存储）
   String _allocId() => 'SP${(_nextSeq++).toString().padLeft(4, '0')}';
 
@@ -441,7 +464,10 @@ class StoreService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 上移 / 下移分类（自定义顺序），delta = -1 上移、1 下移
+  /// 上移 / 下移分类（自定义顺序），delta = -1 上移、1 下移。
+  ///
+  /// UI 已改用 [reorderCategories]（拖拽一次到位），这里保留是为了不改动
+  /// 既有公开 API 与测试。
   void moveCategory(String name, int delta) {
     final i = categories.indexOf(name);
     if (i < 0) return;
@@ -452,6 +478,35 @@ class StoreService extends ChangeNotifier {
     categories[j] = t;
     _persistCategories();
     notifyListeners();
+  }
+
+  /// 整体重排分类（分类管理面板拖拽后一次性提交），只落盘一次。
+  ///
+  /// 传入的顺序即目标顺序；做了两重保护，避免拖拽回调给出残缺列表时
+  /// 把分类**弄丢**：
+  /// 1. 只保留确实存在的分类名，并去掉重复项；
+  /// 2. 原列表里没被提到的分类，按原顺序补到末尾。
+  void reorderCategories(List<String> ordered) {
+    final seen = <String>{};
+    final next = <String>[];
+    for (final name in ordered) {
+      if (categories.contains(name) && seen.add(name)) next.add(name);
+    }
+    for (final name in categories) {
+      if (!seen.contains(name)) next.add(name);
+    }
+    if (_sameOrder(next, categories)) return;
+    categories = next;
+    _persistCategories();
+    notifyListeners();
+  }
+
+  static bool _sameOrder(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   bool _isDuplicateCategory(String name, {String? ignore}) {

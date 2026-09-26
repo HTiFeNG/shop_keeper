@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/sale.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import 'brand_tag.dart';
 
 /// 宽屏（Web / 桌面）销售明细表格行。交互逻辑与 SaleItemCard 一致：
 /// 数量 ± 步进恢复自动联动；手动改总价进入手动模式（解绑图标 + 红色）。
@@ -14,12 +15,16 @@ class SaleItemTableRow extends StatefulWidget {
     required this.item,
     required this.onChanged,
     required this.onDelete,
+    this.brand = '',
   });
 
   final int index; // 行号（1 起）
   final SaleItem item;
   final ValueChanged<SaleItem> onChanged;
   final VoidCallback onDelete;
+
+  /// 该行要显示的品牌（由父层经 `StoreService.brandOf` 取，含老数据的回查兜底）
+  final String brand;
 
   @override
   State<SaleItemTableRow> createState() => _SaleItemTableRowState();
@@ -127,22 +132,29 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
             child: Text('${widget.index}',
                 style: AppTheme.caption, textAlign: TextAlign.center),
           ),
-          // 名称
+          // 名称 + 品牌
           Expanded(
             flex: 4,
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: _cellField(
-                    ctrl: _nameCtrl,
-                    focus: _nameFocus,
-                    hint: '商品名称',
-                    onChanged: (v) {
-                      final next = it.copy()..name = v;
-                      widget.onChanged(next);
-                    },
-                  ),
+                _cellField(
+                  ctrl: _nameCtrl,
+                  focus: _nameFocus,
+                  hint: '商品名称',
+                  onChanged: (v) {
+                    final next = it.copy()..name = v;
+                    widget.onChanged(next);
+                  },
                 ),
+                // 品牌放名称下方一行：宽屏行高有富余，竖排比横排更好读，
+                // 也不会把名称输入框挤窄。
+                if (widget.brand.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 2, top: 2),
+                    child: BrandTag(widget.brand, dense: true),
+                  ),
               ],
             ),
           ),
@@ -340,6 +352,7 @@ class SaleItemTable extends StatelessWidget {
     required this.onChanged,
     required this.onDelete,
     this.keyOf,
+    this.brandOf,
   });
 
   final List<SaleItem> items;
@@ -348,6 +361,9 @@ class SaleItemTable extends StatelessWidget {
 
   /// 由外部提供每行的 key（首页用它持有 GlobalKey，好在记账后滚动定位到该行）
   final Key? Function(String itemId)? keyOf;
+
+  /// 取该行品牌（首页传 `StoreService.brandOf`，含老数据回查兜底）
+  final String Function(SaleItem item)? brandOf;
 
   @override
   Widget build(BuildContext context) {
@@ -376,6 +392,7 @@ class SaleItemTable extends StatelessWidget {
               key: keyOf?.call(items[i].id) ?? ValueKey(items[i].id),
               index: i + 1,
               item: items[i],
+              brand: brandOf?.call(items[i]) ?? '',
               onChanged: onChanged,
               onDelete: () => onDelete(items[i]),
             ),

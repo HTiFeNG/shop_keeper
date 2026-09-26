@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/sale.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import 'brand_tag.dart';
 
 /// 手机端销售明细卡片。
 ///
@@ -20,12 +21,16 @@ class SaleItemCard extends StatefulWidget {
     required this.item,
     required this.onChanged,
     required this.onDelete,
+    this.brand = '',
     this.autofocusName = false,
   });
 
   final SaleItem item;
   final ValueChanged<SaleItem> onChanged;
   final VoidCallback onDelete;
+
+  /// 该行要显示的品牌（由父层经 `StoreService.brandOf` 取，含老数据的回查兜底）
+  final String brand;
 
   final bool autofocusName;
 
@@ -147,25 +152,45 @@ class _SaleItemCardState extends State<SaleItemCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 行1：名称 + 手动标记 + 删除
+          // 行1：名称 + 品牌 + 计价方式 + 手动标记 + 删除
           Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _nameCtrl,
-                  autofocus: widget.autofocusName,
-                  style: const TextStyle(
-                      fontSize: AppTheme.fontBody, fontWeight: FontWeight.w600),
-                  decoration: const InputDecoration(
-                    hintText: '商品名称',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    filled: false,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 6),
-                  ),
-                  onChanged: _changeName,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _nameCtrl,
+                        autofocus: widget.autofocusName,
+                        style: const TextStyle(
+                            fontSize: AppTheme.fontBody,
+                            fontWeight: FontWeight.w600),
+                        decoration: const InputDecoration(
+                          hintText: '商品名称',
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          filled: false,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 6),
+                        ),
+                        onChanged: _changeName,
+                      ),
+                    ),
+                    // 品牌紧跟商品名：同名商品（如两种「矿泉水」）一眼分开。
+                    //
+                    // 这里刻意用「非弹性的 ConstrainedBox」而不是 Flexible：
+                    // Row 里两个弹性子项会**均分**可用宽度，名称输入框会被
+                    // 白白砍掉一半（哪怕品牌只占 4 个字）。品牌按内容取宽、
+                    // 上限 96dp，剩下的全给名称。
+                    if (widget.brand.trim().isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 96),
+                        child: BrandTag(widget.brand),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               if (it.canSwitchPriceMode) _priceModeChip(),

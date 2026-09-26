@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../utils/date_utils.dart' as du;
 import '../utils/format.dart';
 import '../utils/search.dart';
+import '../widgets/brand_tag.dart';
 
 /// 查账页：在历史明细里按关键字 / 日期区间翻找。
 ///
@@ -137,7 +138,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('查账', style: AppTheme.pageTitle),
+        title: const Text('查账'),
         centerTitle: false,
       ),
       body: ListenableBuilder(
@@ -317,12 +318,25 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          it.name.isEmpty ? '未命名商品' : it.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600),
+                        // 商品名 + 品牌：查账时常常是「这个名字有好几种货」，
+                        // 没有品牌就没法确认查到的是不是自己要找的那一笔
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                it.name.isEmpty ? '未命名商品' : it.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            if (store.brandOf(it).isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Flexible(
+                                  child: BrandTag(store.brandOf(it), dense: true)),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 2),
                         Text(

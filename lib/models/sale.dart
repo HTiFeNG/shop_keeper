@@ -27,6 +27,7 @@ class SaleItem {
   SaleItem({
     required this.id,
     this.name = '',
+    this.brand = '',
     this.quantity = 0,
     this.unitPrice = 0,
     this.totalPrice = 0,
@@ -40,6 +41,15 @@ class SaleItem {
 
   String id; // 行唯一标识（微秒时间戳 + 进程内自增，避免同毫秒碰撞）
   String name; // 商品名快照
+
+  /// 品牌快照。
+  ///
+  /// 存在的唯一目的：让「农夫山泉 矿泉水」和「娃哈哈 矿泉水」在营业额明细里
+  /// 能一眼分开。与 [name] 不同的是，它只是辨识用的辅助信息 —— 老数据没有这个
+  /// 字段时，显示层会按 [productId] 回查商品库当前品牌兜底
+  /// （见 `StoreService.brandOf`），不至于「老记录永远显示不出品牌」。
+  String brand;
+
   int quantity; // 数量 >= 0
   double unitPrice; // 单价（选品时按计价方式带入）
   double totalPrice; // 总价 = unitPrice*quantity，或手动改写
@@ -87,6 +97,7 @@ class SaleItem {
     return SaleItem(
       id: newId(),
       name: p.name,
+      brand: p.brand,
       quantity: 1,
       unitPrice: price,
       totalPrice: price,
@@ -114,6 +125,7 @@ class SaleItem {
   SaleItem copy() => SaleItem(
         id: id,
         name: name,
+        brand: brand,
         quantity: quantity,
         unitPrice: unitPrice,
         totalPrice: totalPrice,
@@ -128,6 +140,7 @@ class SaleItem {
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
+        'brand': brand,
         'quantity': quantity,
         'unitPrice': unitPrice,
         'totalPrice': totalPrice,
@@ -142,6 +155,8 @@ class SaleItem {
   factory SaleItem.fromJson(Map<String, dynamic> json) => SaleItem(
         id: json['id'] as String? ?? newId(),
         name: json['name'] as String? ?? '',
+        // 老备份（4.0.0 之前）没有 brand，读成空串即可，由显示层回查兜底
+        brand: json['brand'] as String? ?? '',
         quantity: (json['quantity'] as num?)?.toInt() ?? 0,
         unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0,
         totalPrice: (json['totalPrice'] as num?)?.toDouble() ?? 0,

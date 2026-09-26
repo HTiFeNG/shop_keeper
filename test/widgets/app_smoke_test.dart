@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shop_keeper/services/store_service.dart';
+import 'package:shop_keeper/theme/app_theme.dart';
 import 'package:shop_keeper/utils/date_utils.dart' as du;
 import 'package:shop_keeper/utils/format.dart';
 import 'package:shop_keeper/widgets/sale_item_card.dart';
@@ -302,5 +303,160 @@ void main() {
     useSmallPhone(tester);
     await pumpApp(tester);
     expect(StoreService.instance.ready, isTrue);
+  });
+
+  // ==================== 4.1：标题栏 / 分类交互的回归保护 ====================
+
+  testWidgets('商品页标题完整显示，不会被右侧按钮挤成「商品…」', (tester) async {
+    useSmallPhone(tester);
+    await pumpApp(tester);
+    await tester.tap(find.byIcon(Icons.inventory_2_outlined));
+    await tester.pumpAndSettle();
+
+    final title = find.descendant(
+      of: find.byType(AppBar),
+      matching: find.text('商品管理'),
+    );
+    expect(title, findsOneWidget);
+
+    // 直接用渲染对象判断「有没有被截断」：Text 设了 maxLines + ellipsis 时，
+    // 一旦可用宽度不够，RenderParagraph 会把 didExceedMaxLines 置为 true。
+    final para = tester.renderObject<RenderParagraph>(title);
+    expect(para.didExceedMaxLines, isFalse,
+        reason: '标题被挤压截断了（旧版这里会显示成「商品…」）');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('商品页与其他页共用同一套顶栏标题样式', (tester) async {
+    useSmallPhone(tester);
+    await pumpApp(tester);
+
+    // 营业额页（Tab 1）。限定在 AppBar 内：底部导航栏的标签也叫「营业额」。
+    final salesTitle = tester.renderObject<RenderParagraph>(find.descendant(
+      of: find.byType(AppBar),
+      matching: find.text('营业额'),
+    ));
+    final salesSize = salesTitle.text.style?.fontSize;
+    expect(salesSize, AppTheme.fontAppBarTitle);
+
+    // 商品页（Tab 2）
+    await tester.tap(find.byIcon(Icons.inventory_2_outlined));
+    await tester.pumpAndSettle();
+    final productTitle = tester.renderObject<RenderParagraph>(find.descendant(
+      of: find.byType(AppBar),
+      matching: find.text('商品管理'),
+    ));
+    expect(productTitle.text.style?.fontSize, salesSize,
+        reason: '两个主线页面的标题字号必须一致，否则切页时标题会「跳」一下');
+  });
+
+  testWidgets('点商品行的分类标签 → 选分类，两次点击完成改分类', (tester) async {
+    useSmallPhone(tester);
+    await resetStoreWith({
+      'sk_seeded': true,
+      'sk_products': jsonEncode([
+        {
+          'id': 'SP0001',
+          'name': '矿泉水',
+          'category': '',
+          'brand': '农夫山泉',
+          'barcode': '',
+          'wholesalePrice': 0,
+          'purchasePrice': 1,
+          'retailPrice': 2,
+          'isFavorite': false,
+        }
+      ]),
+      'sk_categories': <String>['饮料', '零食'],
+    });
+    await pumpApp(tester);
+    await tester.tap(find.byIcon(Icons.inventory_2_outlined));
+    await tester.pumpAndSettle();
+
+    // 第一次点击：商品行上的分类标签（此时是「未分类」）
+    // 注意分类 Chips 里那个是「未分类（1）」，带计数，不会和它撞上
+    await tester.tap(find.text('未分类'));
+    await tester.pumpAndSettle();
+
+    // 分类选择面板弹出
+    expect(find.textContaining('归到哪个分类'), findsOneWidget);
+    final sheet = find.byType(BottomSheet);
+    expect(sheet, findsOneWidget);
+
+    // 第二次点击：面板里选「饮料」
+    await tester.tap(find.descendant(
+      of: sheet,
+      matching: find.text('饮料'),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(StoreService.instance.findById('SP0001')!.category, '饮料');
+    expect(find.text('已归到「饮料」'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('分类「管理」入口打开管理面板，可用拖拽排序', (tester) async {
+    useSmallPhone(tester);
+    await resetStoreWith({
+      'sk_seeded': true,
+      'sk_categories': <String>['饮料', '零食'],
+    });
+    await pumpApp(tester);
+    await tester.tap(find.byIcon(Icons.inventory_2_outlined));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('管理'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('管理分类'), findsOneWidget);
+    expect(find.textContaining('拖动'), findsOneWidget,
+        reason: '要明确告诉用户「按住右侧手柄拖动」，否则中老年用户不会去试');
+    // 每行都有改名 / 删除入口
+    expect(find.byIcon(Icons.edit_outlined), findsNWidgets(2));
+    expect(find.byIcon(Icons.delete_outline), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('营业额明细行会显示品牌，同名商品可区分', (tester) async {
+    useSmallPhone(tester);
+    final today = du.todayKey();
+    await resetStoreWith({
+      'sk_seeded': true,
+      'sk_products': jsonEncode([
+        {
+          'id': 'SP0001',
+          'name': '矿泉水',
+          'brand': '农夫山泉',
+          'barcode': '',
+          'wholesalePrice': 0,
+          'purchasePrice': 1,
+          'retailPrice': 2,
+          'isFavorite': false,
+        }
+      ]),
+      // 老明细：有 productId 但没有 brand 快照，考验回查兜底
+      'sk_sales': jsonEncode({
+        today: {
+          'date': today,
+          'items': [
+            {
+              'id': 'r1',
+              'name': '矿泉水',
+              'quantity': 1,
+              'unitPrice': 2,
+              'totalPrice': 2,
+              'isManualMode': false,
+              'productId': 'SP0001',
+            }
+          ],
+        },
+      }),
+    });
+    await pumpApp(tester);
+
+    expect(find.text('矿泉水'), findsOneWidget);
+    expect(find.text('农夫山泉'), findsOneWidget,
+        reason: '老明细没有品牌快照，也要能按 productId 回查显示出来');
+    expect(tester.takeException(), isNull);
   });
 }

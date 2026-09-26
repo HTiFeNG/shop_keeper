@@ -11,6 +11,8 @@ import '../theme/app_theme.dart';
 import '../utils/csv_codec.dart';
 import '../utils/search.dart';
 import '../widgets/category_chips.dart';
+import '../widgets/category_name_dialog.dart';
+import '../widgets/category_picker_sheet.dart';
 import '../widgets/category_sidebar.dart';
 import '../widgets/product_tile.dart';
 import '../widgets/scan_page.dart';
@@ -118,103 +120,44 @@ class _ProductManagePageState extends State<ProductManagePage> {
 
   // ==================== 分类管理 ====================
 
-  Future<void> _showAddCategoryDialog() async {
-    await _showCategoryDialog(title: '添加分类', initial: '');
-  }
-
-  Future<void> _showEditCategoryDialog(String oldName) async {
-    await _showCategoryDialog(
-        title: '编辑分类', initial: oldName, oldName: oldName);
-  }
-
-  Future<void> _showCategoryDialog({
-    required String title,
-    required String initial,
-    String? oldName,
-  }) async {
-    final ctrl = TextEditingController(text: initial);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        String? error;
-        return StatefulBuilder(
-          builder: (ctx, setStateDialog) => AlertDialog(
-            title: Text(title),
-            content: TextField(
-              controller: ctrl,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: '请输入分类名称',
-                errorText: error,
-              ),
-              onChanged: (_) {
-                if (error != null) setStateDialog(() => error = null);
-              },
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('取消')),
-              FilledButton(
-                onPressed: () {
-                  final name = ctrl.text.trim();
-                  if (name.isEmpty) {
-                    setStateDialog(() => error = '请输入分类名称');
-                    return;
-                  }
-                  final dup = oldName == null
-                      ? !store.addCategory(name)
-                      : !store.renameCategory(oldName, name);
-                  if (dup) {
-                    setStateDialog(() => error = '该分类已存在');
-                    return;
-                  }
-                  Navigator.pop(ctx, true);
-                },
-                child: const Text('确定'),
-              ),
-            ],
-          ),
-        );
-      },
+  /// 新建分类，返回新分类名（取消返回 null）。
+  ///
+  /// 之所以要返回值：分类选择面板里的「新建分类」建完可以直接选中它，
+  /// 省掉「建好了还要再翻一遍列表选中」的多余动作。
+  Future<String?> _promptNewCategory() async {
+    final name = await showCategoryNameDialog(
+      context,
+      title: '添加分类',
+      existing: store.categories,
     );
-    if (ok == true) {
-      final newName = ctrl.text.trim();
-      if (oldName != null &&
-          _selectedCategory == oldName &&
-          newName != oldName) {
-        setState(() => _selectedCategory = newName);
-      } else {
-        _syncSelectedCategory();
-      }
+    if (name == null || !mounted) return null;
+    if (!store.addCategory(name)) {
+      _toastErr('分类「$name」已存在');
+      return null;
     }
+    return name;
   }
 
-  Future<void> _confirmDeleteCategory(String name) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('删除分类「$name」'),
-        content: const Text(
-            '删除后：该分类下无小类的商品将归入「未分类」，带小类的商品仅保留小类名。确定删除吗？'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppTheme.priceRed),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+  /// 给单个商品改分类。
+  ///
+  /// 这是「简化分类操作」的主路径：**两次点击**（点分类标签 → 点目标分类）。
+  /// 旧路径要走「批量 → 勾选 → 移动分类 → 选分类」四步，而店主九成情况下
+  /// 只是想给一个商品挪个位置。
+  Future<void> _changeCategory(Product p) async {
+    final target = await showCategoryPicker(
+      context,
+      categories: store.categories,
+      current: p.category.isEmpty ? kCategoryNone : p.category,
+      title: '「${p.name.isEmpty ? '未命名' : p.name}」归到哪个分类？',
+      onCreate: _promptNewCategory,
     );
-    if (ok == true) {
-      store.deleteCategory(name);
-      _syncSelectedCategory();
-    }
+    if (target == null || !mounted) return;
+    // 「未分类」统一落成 kCategoryNone（与 deleteCategory 的处理保持一致）
+    store.setCategory(p.id, target);
+    _toast(target == kCategoryNone ? '已移到「未分类」' : '已归到「$target」');
   }
 
+  /// 分类被删除后的收尾：选中项已不存在就退回「全部」
   void _syncSelectedCategory() {
     if (_selectedCategory != kCategoryAll &&
         _selectedCategory != kCategoryNone) {
@@ -222,6 +165,22 @@ class _ProductManagePageState extends State<ProductManagePage> {
         setState(() => _selectedCategory = kCategoryAll);
       }
     }
+  }
+
+  /// 重命名分类（分类管理面板调用）。重名返回 false，由面板负责提示。
+  bool _renameCategory(String oldName, String newName) {
+    final ok = store.renameCategory(oldName, newName);
+    // 改名时如果正停在这个分类上，跟着切过去，否则筛选结果会瞬间变空
+    if (ok && _selectedCategory == oldName) {
+      setState(() => _selectedCategory = newName);
+    }
+    return ok;
+  }
+
+  /// 删除分类。确认框由分类管理面板弹出，走到这里说明用户已经确认过。
+  void _deleteCategory(String name) {
+    store.deleteCategory(name);
+    _syncSelectedCategory();
   }
 
   // ==================== 导出 / 导入 / 备份 ====================
@@ -462,54 +421,24 @@ class _ProductManagePageState extends State<ProductManagePage> {
     });
   }
 
+  /// 批量移动分类（多选场景）。
+  ///
+  /// 复用与单个商品相同的分类选择面板，不再单独维护一套弹窗。
   Future<void> _batchMoveCategory() async {
     if (_selectedIds.isEmpty) {
       _toast('请先选择商品');
       return;
     }
-
-    final options = <String>[kCategoryNone, ...store.categories];
-
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('移动到分类'),
-        children: [
-          for (final cat in options)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, cat),
-              child: Row(
-                children: [
-                  const Icon(Icons.folder_outlined,
-                      size: 20, color: AppTheme.textSecondary),
-                  const SizedBox(width: 12),
-                  Text(cat, style: const TextStyle(fontSize: 15)),
-                ],
-              ),
-            ),
-          SimpleDialogOption(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await _showAddCategoryDialog();
-              if (mounted) _batchMoveCategory();
-            },
-            child: const Row(
-              children: [
-                Icon(Icons.add, size: 20, color: AppTheme.primary),
-                SizedBox(width: 12),
-                Text('新建分类',
-                    style: TextStyle(fontSize: 15, color: AppTheme.primary)),
-              ],
-            ),
-          ),
-        ],
-      ),
+    final count = _selectedIds.length;
+    final target = await showCategoryPicker(
+      context,
+      categories: store.categories,
+      title: '把选中的 $count 件商品移到…',
+      onCreate: _promptNewCategory,
     );
-
-    if (result == null) return;
-    final target = result;
+    if (target == null || !mounted) return;
     store.batchSetCategory(_selectedIds.toList(), target);
-    _toast('已将 ${_selectedIds.length} 件商品移动到「$target」');
+    _toast('已将 $count 件商品移动到「$target」');
     _exitBatchMode();
   }
 
@@ -550,157 +479,154 @@ class _ProductManagePageState extends State<ProductManagePage> {
     final wide = MediaQuery.of(context).size.width > kWideBreakpoint;
     return Scaffold(
       backgroundColor: AppTheme.background,
-      body: SafeArea(
-        bottom: false,
-        child: ListenableBuilder(
-          listenable: store,
-          builder: (context, _) {
-            final filtered = _filteredProducts();
-            final uncatCount = store.products
-                .where(
-                    (p) => p.category.isEmpty || p.category == kCategoryNone)
-                .length;
-            return Column(
-              children: [
-                _header(),
-                _searchBar(),
-                if (!wide)
-                  CategoryChips(
-                    categories: store.categories,
-                    selected: _selectedCategory,
-                    showUncategorized: uncatCount > 0,
-                    uncategorizedCount: uncatCount,
-                    onSelect: (c) => setState(() => _selectedCategory = c),
-                    onAdd: _showAddCategoryDialog,
-                    onEdit: _showEditCategoryDialog,
-                    onDelete: _confirmDeleteCategory,
-                    onMoveUp: (c) => store.moveCategory(c, -1),
-                    onMoveDown: (c) => store.moveCategory(c, 1),
-                  ),
-                Expanded(
-                  child: wide
-                      ? Row(
-                          children: [
-                            CategorySidebar(
-                              categories: store.categories,
-                              selected: _selectedCategory,
-                              showUncategorized: uncatCount > 0,
-                              uncategorizedCount: uncatCount,
-                              onSelect: (c) =>
-                                  setState(() => _selectedCategory = c),
-                              onAdd: _showAddCategoryDialog,
-                              onEdit: _showEditCategoryDialog,
-                              onDelete: _confirmDeleteCategory,
-                              onMoveUp: (c) => store.moveCategory(c, -1),
-                              onMoveDown: (c) => store.moveCategory(c, 1),
-                            ),
-                            Expanded(child: _productList(filtered)),
-                          ],
-                        )
-                      : _productList(filtered),
+      // 标题栏改用 AppBar（原来是自己画的一行 Row）：
+      // 顶部状态栏内边距、滚动阴影、图标与标题的对齐都由框架处理，
+      // 与营业额页等其余页面自然对齐。
+      appBar: _header(),
+      body: ListenableBuilder(
+        listenable: store,
+        builder: (context, _) {
+          final filtered = _filteredProducts();
+          final uncatCount = store.products
+              .where(
+                  (p) => p.category.isEmpty || p.category == kCategoryNone)
+              .length;
+          return Column(
+            children: [
+              _searchBar(),
+              if (!wide)
+                CategoryChips(
+                  categories: store.categories,
+                  selected: _selectedCategory,
+                  showUncategorized: uncatCount > 0,
+                  uncategorizedCount: uncatCount,
+                  onSelect: (c) => setState(() => _selectedCategory = c),
+                  onAdd: _promptNewCategory,
+                  onRename: _renameCategory,
+                  onDelete: _deleteCategory,
+                  onReorder: store.reorderCategories,
                 ),
-                _bottomBar(),
-              ],
-            );
-          },
-        ),
+              Expanded(
+                child: wide
+                    ? Row(
+                        children: [
+                          CategorySidebar(
+                            categories: store.categories,
+                            selected: _selectedCategory,
+                            showUncategorized: uncatCount > 0,
+                            uncategorizedCount: uncatCount,
+                            onSelect: (c) =>
+                                setState(() => _selectedCategory = c),
+                            onAdd: _promptNewCategory,
+                            onRename: _renameCategory,
+                            onDelete: _deleteCategory,
+                            onReorder: store.reorderCategories,
+                          ),
+                          Expanded(child: _productList(filtered)),
+                        ],
+                      )
+                    : _productList(filtered),
+              ),
+              _bottomBar(),
+            ],
+          );
+        },
       ),
     );
   }
 
-  /// 标题栏：批量 / 新增 / 备份恢复菜单
-  Widget _header() => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
-        child: Row(
-          children: [
-            // Flexible + 省略号：大字号（Android「大字体」）下标题不再把整行挤爆
-            const Flexible(
-              child: Text('商品管理',
-                  style: AppTheme.pageTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
+  /// 标题栏：换成与营业额页同一套 AppBar。
+  ///
+  /// 两处改动的理由：
+  /// 1. **标题不再被挤断**。原来是自绘 Row，标题包在 `Flexible + 省略号` 里，
+  ///    右侧动作一多就被压成「商品…」。AppBar 的 title 有专门的弹性布局，
+  ///    动作再宽也优先保住标题。
+  /// 2. **按钮不再比标题还重**。「新增 / 批量」原来定在 48dp 高，视觉分量压过
+  ///    标题。收到 36dp 后与顶栏图标按钮齐平；命中区**没有变小** ——
+  ///    主题里 `materialTapTargetSize: padded` 会在按钮外围补足到 48dp。
+  ///    两按钮间距同时从 8 拉到 12，进一步降低「新增」和「批量」点串的概率。
+  PreferredSizeWidget _header() => AppBar(
+        title: const Text('商品管理',
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: [
+          if (_batchMode)
+            TextButton(
+              onPressed: _exitBatchMode,
+              child: const Text('取消', style: TextStyle(fontSize: 14)),
+            )
+          else ...[
+            PopupMenuButton<String>(
+              tooltip: '数据备份与恢复',
+              icon: const Icon(Icons.backup_outlined,
+                  color: AppTheme.textSecondary),
+              onSelected: (v) {
+                if (v == 'backup') _backup();
+                if (v == 'restore') _restore();
+                if (v == 'undoRestore') _undoRestore();
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'backup',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.upload_outlined),
+                    title: Text('备份全部数据'),
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'restore',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.download_outlined),
+                    title: Text('从备份恢复'),
+                  ),
+                ),
+                if (store.hasRestoreSnapshot)
+                  const PopupMenuItem(
+                    value: 'undoRestore',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.undo),
+                      title: Text('撤销上次恢复'),
+                    ),
+                  ),
+              ],
             ),
-            const Spacer(),
-            if (_batchMode)
-              TextButton(
-                onPressed: _exitBatchMode,
-                child: const Text('取消', style: TextStyle(fontSize: 14)),
-              )
-            else ...[
-              PopupMenuButton<String>(
-                tooltip: '数据备份与恢复',
-                icon: const Icon(Icons.backup_outlined,
-                    color: AppTheme.textSecondary),
-                onSelected: (v) {
-                  if (v == 'backup') _backup();
-                  if (v == 'restore') _restore();
-                  if (v == 'undoRestore') _undoRestore();
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'backup',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.upload_outlined),
-                      title: Text('备份全部数据'),
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'restore',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.download_outlined),
-                      title: Text('从备份恢复'),
-                    ),
-                  ),
-                  if (store.hasRestoreSnapshot)
-                    const PopupMenuItem(
-                      value: 'undoRestore',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.undo),
-                        title: Text('撤销上次恢复'),
-                      ),
-                    ),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primaryText,
+                side: const BorderSide(color: AppTheme.primary),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.padded,
+              ),
+              onPressed: _enterBatchMode,
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.checklist, size: 16),
+                  SizedBox(width: 4),
+                  Text('批量', style: TextStyle(fontSize: 13)),
                 ],
               ),
-              OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primaryText,
-                  side: const BorderSide(color: AppTheme.primary),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  // 48dp：原为 36，且与「新增」只隔 8dp，很容易点错
-                  minimumSize: const Size(0, 48),
-                ),
-                onPressed: _enterBatchMode,
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.checklist, size: 16),
-                    SizedBox(width: 4),
-                    Text('批量',
-                        style: TextStyle(fontSize: AppTheme.fontCaption)),
-                  ],
-                ),
+            ),
+            const SizedBox(width: 12),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.padded,
               ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  minimumSize: const Size(0, 48),
-                ),
-                onPressed: () => _openEdit(),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('新增', style: TextStyle(fontSize: 14)),
-              ),
-            ],
+              onPressed: () => _openEdit(),
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('新增', style: TextStyle(fontSize: 13)),
+            ),
           ],
-        ),
+          const SizedBox(width: 8),
+        ],
       );
 
   /// 实时搜索框（按商品名 / 品牌 / 条码）
@@ -802,6 +728,8 @@ class _ProductManagePageState extends State<ProductManagePage> {
               onQuickSale: () => store.requestPrefill(products[i].id),
               // 直接在列表里加星：不必进编辑页，否则「一键记账」很难被发现
               onToggleFavorite: () => store.toggleFavorite(products[i].id),
+              // 点分类标签直接改分类，不必再进批量模式
+              onChangeCategory: () => _changeCategory(products[i]),
               selected: _selectedIds.contains(products[i].id),
               onSelectToggle:
                   _batchMode ? () => _toggleSelect(products[i].id) : null,

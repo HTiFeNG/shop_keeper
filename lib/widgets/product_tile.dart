@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import 'brand_tag.dart';
 
-/// 商品列表项：商品名、条码、品牌类别、红色零售价、星标、「记一笔」快捷按钮。
+/// 商品列表项：商品名、条码、品牌 + 可点分类、红色零售价、星标、「记一笔」快捷按钮。
 ///
 /// - 点击整行 → 编辑；垃圾桶 → 删除（带确认）；
+/// - **点分类标签 → 直接弹分类选择面板**（不必再进批量模式，见 [onChangeCategory]）；
 /// - 「记一笔」→ 首页预填一行（store.requestPrefill）；
 /// - ★ → 切换常用商品（直接影响首页一键记账栏）；
 /// - 批量模式（onSelectToggle != null）：左侧复选框，整行切换选中。
@@ -20,6 +22,7 @@ class ProductTile extends StatelessWidget {
     required this.onDelete,
     this.onQuickSale,
     this.onToggleFavorite,
+    this.onChangeCategory,
     this.selected = false,
     this.onSelectToggle,
   });
@@ -33,10 +36,16 @@ class ProductTile extends StatelessWidget {
 
   /// 切换星标（null 时不显示星标按钮）
   final VoidCallback? onToggleFavorite;
+
+  /// 点分类标签时触发（null 时分类只作展示、不可点）
+  final VoidCallback? onChangeCategory;
   final bool selected;
   final VoidCallback? onSelectToggle; // 非 null 时进入批量模式
 
   bool get _batchMode => onSelectToggle != null;
+
+  /// 分类标签是否可点：批量模式下整行都是「选中」语义，不能再叠改分类
+  bool get _categoryTappable => onChangeCategory != null && !_batchMode;
 
   Future<void> _confirmDelete(BuildContext context) async {
     final ok = await showDialog<bool>(
@@ -57,6 +66,67 @@ class ProductTile extends StatelessWidget {
       ),
     );
     if (ok == true) onDelete();
+  }
+
+  /// 可点的分类标签。
+  ///
+  /// 这是本次「简化分类操作」的核心：以前换分类必须先进批量模式勾选商品，
+  /// 现在分类本身就是个按钮，点一下直接出选择面板，两次点击搞定。
+  /// 视觉高度只有 32dp（不然会把商品行撑得很松），但外层垫到 32dp 的命中区；
+  /// 误触的代价只是弹出一个选择面板，不会改坏数据。
+  Widget _categoryChip() {
+    final has = product.category.isNotEmpty;
+    final label = has ? product.category : '未分类';
+    return Material(
+      color: has ? AppTheme.orangeSurface : Colors.transparent,
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: _categoryTappable ? onChangeCategory : null,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: has
+                  ? AppTheme.primary.withValues(alpha: 0.28)
+                  : AppTheme.divider,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                has ? Icons.folder_outlined : Icons.folder_off_outlined,
+                size: 14,
+                color: has ? AppTheme.primaryText : AppTheme.textSecondary,
+              ),
+              const SizedBox(width: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 110),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: has ? AppTheme.primaryText : AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+              if (_categoryTappable) ...[
+                const SizedBox(width: 2),
+                // 小箭头是「这里能点」的视觉暗示；不可点时干脆不画
+                Icon(Icons.arrow_drop_down,
+                    size: 14,
+                    color: has ? AppTheme.primaryText : AppTheme.textSecondary),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -117,18 +187,17 @@ class ProductTile extends StatelessWidget {
                           color: AppTheme.textSecondary),
                     ),
                     if (product.brand.isNotEmpty ||
-                        product.category.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        [
-                          if (product.brand.isNotEmpty) product.brand,
-                          if (product.category.isNotEmpty) product.category,
-                        ].join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: AppTheme.fontCaption,
-                            color: AppTheme.textSecondary),
+                        product.category.isNotEmpty ||
+                        _categoryTappable) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          if (product.brand.isNotEmpty) ...[
+                            Flexible(child: BrandTag(product.brand)),
+                            const SizedBox(width: 6),
+                          ],
+                          Flexible(child: _categoryChip()),
+                        ],
                       ),
                     ],
                   ],

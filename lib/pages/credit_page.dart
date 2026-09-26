@@ -38,7 +38,7 @@ class _CreditPageState extends State<CreditPage> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('欠账本', style: AppTheme.pageTitle),
+        title: const Text('欠账本'),
         centerTitle: false,
       ),
       floatingActionButton: FloatingActionButton.extended(

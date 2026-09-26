@@ -183,7 +183,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('跨端同步', style: AppTheme.pageTitle),
+        title: const Text('跨端同步'),
         centerTitle: false,
       ),
       body: ListView(

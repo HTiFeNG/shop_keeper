@@ -129,6 +129,36 @@ void main() {
       expect(it.priceMode, SalePriceMode.retail);
       expect(it.canSwitchPriceMode, isFalse);
     });
+
+    test('brand 快照：fromProduct 带入品牌，JSON 往返保留', () {
+      final p = Product(
+          id: 'SP0001', name: '矿泉水', brand: '农夫山泉', retailPrice: 2);
+      final it = SaleItem.fromProduct(p);
+      expect(it.brand, '农夫山泉');
+      final back = SaleItem.fromJson(jsonDecode(jsonEncode(it.toJson())));
+      expect(back.brand, '农夫山泉');
+    });
+
+    test('copy 不会丢品牌', () {
+      final it = SaleItem(id: 'x', name: '水', brand: '娃哈哈');
+      final c = it.copy()..quantity = 3;
+      expect(c.brand, '娃哈哈');
+      expect(c.quantity, 3);
+    });
+
+    test('4.0.0 之前的老明细没有 brand 字段：读成空串，其它字段照旧', () {
+      final it = SaleItem.fromJson({
+        'id': 'old1',
+        'name': '矿泉水',
+        'quantity': 1,
+        'unitPrice': 2,
+        'totalPrice': 2,
+        'productId': 'SP0001',
+      });
+      expect(it.brand, '');
+      expect(it.name, '矿泉水');
+      expect(it.productId, 'SP0001');
+    });
   });
 
   group('Credit（欠账）', () {
