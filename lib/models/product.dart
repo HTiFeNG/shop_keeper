@@ -68,10 +68,43 @@ class Product {
   ];
 
   List<String> toCsvRow() => [
-        id, name, category, brand, barcode,
+        id, name, category, brand, _barcodeCell(barcode),
         fmtPrice(wholesalePrice), fmtPrice(purchasePrice),
         fmtPrice(retailPrice),
       ];
+
+  /// CSV 里「条码」这一格的写法。
+  ///
+  /// 纯数字条码（EAN-13 就是 13 位）必须写成 Excel 的**强制文本**形式
+  /// `="6901234567890"`，否则 Excel / WPS 打开时会：
+  /// - 把长数字显示成科学计数法（`6.090103E+12`）；
+  /// - 更糟的是**以 0 开头的条码会直接丢掉前导 0**
+  ///   （`0690103000000` → `690103000000`，扫码就再也对不上了）。
+  ///
+  /// 这一格会被 [CsvCodec] 自动包成 `"=""6901234567890"""`（因为它含引号），
+  /// Excel 打开时按公式求值成文本，显示完整数字；本 App 重新导入时再由
+  /// [Product.fromCsvRow] 还原。非纯数字条码本来就会被当成文本，不需要包装。
+  static String _barcodeCell(String barcode) {
+    if (barcode.isEmpty) return '';
+    if (!RegExp(r'^\d+$').hasMatch(barcode)) return barcode;
+    return '="$barcode"';
+  }
+
+  /// 还原 CSV 里的条码：剥掉上面那种 Excel 强制文本的包装。
+  ///
+  /// 兼容三种来源：`="690..."`（本 App 导出的）、`=690...`（Excel 把公式
+  /// 存回来的）、`'690...`（用户手工在 Excel 里用前导单引号强制文本）。
+  static String _parseBarcode(String raw) {
+    var s = raw.trim();
+    if (s.startsWith('=')) {
+      s = s.substring(1).trim();
+      if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+        s = s.substring(1, s.length - 1);
+      }
+    }
+    if (s.startsWith("'")) s = s.substring(1);
+    return s.trim();
+  }
 
   /// 从 CSV 行解析（列顺序需与 [csvHeader] 一致）
   factory Product.fromCsvRow(List<String> row) => Product(
@@ -79,7 +112,7 @@ class Product {
         name: row.length > 1 ? row[1].trim() : '',
         category: row.length > 2 ? row[2].trim() : '',
         brand: row.length > 3 ? row[3].trim() : '',
-        barcode: row.length > 4 ? row[4].trim() : '',
+        barcode: row.length > 4 ? _parseBarcode(row[4]) : '',
         wholesalePrice: row.length > 5 ? parsePrice(row[5]) : 0,
         purchasePrice: row.length > 6 ? parsePrice(row[6]) : 0,
         retailPrice: row.length > 7 ? parsePrice(row[7]) : 0,

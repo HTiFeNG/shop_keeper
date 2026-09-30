@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shop_keeper/models/credit.dart';
 import 'package:shop_keeper/models/product.dart';
 import 'package:shop_keeper/models/sale.dart';
+import 'package:shop_keeper/utils/csv_codec.dart';
 
 void main() {
   group('Product', () {
@@ -41,6 +42,52 @@ void main() {
       expect(back.wholesalePrice, p.wholesalePrice);
       expect(back.purchasePrice, p.purchasePrice);
       expect(back.retailPrice, p.retailPrice);
+      expect(back.barcode, p.barcode);
+    });
+
+    test('条码写成 Excel 强制文本：不再变成 6.090103E+12', () {
+      // 13 位条码若按纯数字输出，Excel/WPS 会显示成科学计数法
+      final p = Product(id: 'SP0001', name: '可乐', barcode: '6090103000000');
+      expect(p.toCsvRow()[4], '="6090103000000"');
+
+      // 经过 CsvCodec 会被包成 "=""6090103000000"""（Excel 求值成文本）
+      final encoded = const CsvCodec().encodeRow(p.toCsvRow());
+      expect(encoded, contains('"=""6090103000000"""'));
+
+      // 再解回来必须还原成原始条码
+      final back = Product.fromCsvRow(
+          const CsvCodec().decode(encoded).single);
+      expect(back.barcode, '6090103000000');
+    });
+
+    test('以 0 开头的条码不会丢前导 0', () {
+      final p = Product(id: 'SP0001', name: '矿泉水', barcode: '0690103000000');
+      final round = Product.fromCsvRow(
+          const CsvCodec().decode(const CsvCodec().encodeRow(p.toCsvRow()))
+              .single);
+      expect(round.barcode, '0690103000000');
+    });
+
+    test('兼容手工编辑过的条码写法与旧文件', () {
+      // 本 App 导出形式
+      expect(Product.fromCsvRow(['', '', '', '', '="6901234567890"']).barcode,
+          '6901234567890');
+      // Excel 存回来的公式形式（没有引号）
+      expect(Product.fromCsvRow(['', '', '', '', '=6901234567890']).barcode,
+          '6901234567890');
+      // 用户手工用前导单引号强制文本
+      expect(Product.fromCsvRow(['', '', '', '', "'6901234567890"]).barcode,
+          '6901234567890');
+      // 老版本导出的纯数字 / 字母数字条码照常读
+      expect(Product.fromCsvRow(['', '', '', '', '6901234567890']).barcode,
+          '6901234567890');
+      expect(Product.fromCsvRow(['', '', '', '', 'ABC-123']).barcode, 'ABC-123');
+      // 非纯数字条码不做包装（本来就是文本）
+      expect(
+          Product(id: 'SP1', name: 'x', barcode: 'ABC-123').toCsvRow()[4],
+          'ABC-123');
+      // 空条码保持为空
+      expect(Product(id: 'SP1', name: 'x').toCsvRow()[4], '');
     });
 
     test('JSON 往返：缺失字段用安全默认值', () {
