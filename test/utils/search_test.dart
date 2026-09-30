@@ -111,5 +111,20 @@ void main() {
       expect(() => SearchIndex.matches(query: 'a', name: '𠮷野家'), returnsNormally);
       expect(() => SearchIndex.score(query: 'x', name: ''), returnsNormally);
     });
+
+    test('空白不敏感：查询去掉空格，索引侧也必须去掉', () {
+      SearchIndex.resetCache();
+      // 查询串会被 normalize 去掉空格，若索引侧保留原文空格就会漏匹配
+      expect(SearchIndex.matches(query: '500 ml', name: '可乐500 ml'), isTrue);
+      expect(SearchIndex.matches(query: '500ml', name: '可乐 500ml'), isTrue);
+      expect(SearchIndex.matches(query: '可乐', name: '可 乐'), isTrue);
+    });
+
+    test('缓存可重置（避免用例之间互相污染）', () {
+      SearchIndex.matches(query: 'kl', name: '可乐');
+      expect(SearchIndex.cacheSize, greaterThan(0));
+      SearchIndex.resetCache();
+      expect(SearchIndex.cacheSize, 0);
+    });
   });
 }

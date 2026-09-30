@@ -188,12 +188,31 @@ class DailyRecord {
         'items': items.map((e) => e.toJson()).toList(),
       };
 
-  factory DailyRecord.fromJson(Map<String, dynamic> json) => DailyRecord(
-        date: json['date'] as String? ?? '',
-        items: (json['items'] as List? ?? [])
-            .map((e) => SaleItem.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
+  /// 从 JSON 还原一天的记录。
+  ///
+  /// [onBadItem] 用于统计被跳过的坏行。这里**必须逐条容错**：旧实现是无保护的
+  /// `e as Map<String, dynamic>`，`items` 里任何一条不是对象的元素都会抛异常，
+  /// 而这条路径同时被「恢复备份」和「App 启动加载」复用 —— 一条坏数据就能让
+  /// 启动卡在闪屏页（load 抛异常 → ready 永远为 false）。
+  factory DailyRecord.fromJson(Map<String, dynamic> json,
+      {void Function()? onBadItem}) {
+    final raw = json['items'];
+    final items = <SaleItem>[];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is Map<String, dynamic>) {
+          try {
+            items.add(SaleItem.fromJson(e));
+          } catch (_) {
+            onBadItem?.call(); // 字段类型也不对（例如 quantity 是字符串）
+          }
+        } else {
+          onBadItem?.call();
+        }
+      }
+    }
+    return DailyRecord(date: json['date'] as String? ?? '', items: items);
+  }
 }
 
 /// 商品页「记一笔」→ 首页预填一行 的跨 Tab 通知载体。

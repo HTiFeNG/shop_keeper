@@ -306,4 +306,149 @@ void main() {
       expect(store.daysSinceBackup, 0);
     });
   });
+
+  group('恢复保护（评审后补）', () {
+    test('v2 老备份不含欠账：默认拒绝，确认后才清空', () async {
+      final store = StoreService.instance;
+      store.addProduct(Product(id: 'SP0001', name: '白菜'));
+      store.addCredit(Credit(
+          id: 'c1', customer: '王婶', amount: 100, date: '2026-07-01'));
+      expect(store.credits.length, 1);
+
+      // 一份合法的 v2 备份（v2 没有 credits 字段）
+      final v2 = jsonEncode({
+        'version': 2,
+        'exportedAt': '2026-07-02T00:00:00.000',
+        'products': [
+          {'id': 'SP0009', 'name': '备份里的商品'}
+        ],
+        'categories': <String>[],
+        'sales': <String, dynamic>{},
+      });
+
+      // 默认拒绝，且数据完全没动 —— 欠账不能被静默清空
+      final blocked = await store.importBackup(v2);
+      expect(blocked.ok, isFalse);
+      expect(blocked.needsCreditConfirm, isTrue);
+      expect(store.credits.length, 1);
+      expect(store.products.single.name, '白菜');
+
+      // 用户确认后才真的恢复，并清空欠账
+      final forced = await store.importBackup(v2, allowCreditLoss: true);
+      expect(forced.ok, isTrue);
+      expect(store.credits, isEmpty);
+      expect(store.products.single.name, '备份里的商品');
+    });
+
+    test('items 里混入坏元素：只跳过它，不再让整份备份作废', () async {
+      final store = StoreService.instance;
+      final text = jsonEncode({
+        'version': 3,
+        'products': [
+          {'id': 'SP0001', 'name': '好商品'}
+        ],
+        'categories': <String>[],
+        'sales': {
+          '2026-07-01': {
+            'date': '2026-07-01',
+            'items': [
+              '坏行', // 不是对象
+              42, // 也不是
+              {
+                'id': 'ok1',
+                'name': '正常行',
+                'quantity': 1,
+                'unitPrice': 2,
+                'totalPrice': 2,
+              },
+            ],
+          },
+        },
+      });
+
+      final r = await store.importBackup(text);
+      expect(r.ok, isTrue);
+      expect(store.itemsOf('2026-07-01').length, 1);
+      expect(store.itemsOf('2026-07-01').single.name, '正常行');
+      expect(r.skipped, greaterThanOrEqualTo(2));
+    });
+
+    test('导入校验：重复编号 / 负金额 / 非法日期都会被跳过', () async {
+      final store = StoreService.instance;
+      final text = jsonEncode({
+        'version': 3,
+        'products': [
+          {'id': 'SP0001', 'name': 'A', 'retailPrice': 3},
+          {'id': 'SP0001', 'name': '重复编号的B', 'retailPrice': 9},
+        ],
+        'categories': <String>[],
+        'sales': {
+          // 键不是合法日期
+          '不是日期': {
+            'date': '不是日期',
+            'items': [
+              {
+                'id': 'x',
+                'name': '脏行',
+                'quantity': 1,
+                'unitPrice': 1,
+                'totalPrice': 1,
+              },
+            ],
+          },
+          // 负金额的行
+          '2026-07-02': {
+            'date': '2026-07-02',
+            'items': [
+              {
+                'id': 'y',
+                'name': '负金额',
+                'quantity': 1,
+                'unitPrice': -2,
+                'totalPrice': -2,
+              },
+            ],
+          },
+        },
+        'credits': [
+          {'id': 'c1', 'customer': '甲', 'amount': -50, 'date': '2026-07-01'},
+          {'id': 'c2', 'customer': '乙', 'amount': 20, 'date': '乱日期'},
+          {'id': 'c3', 'customer': '丙', 'amount': 30, 'date': '2026-07-01'},
+        ],
+      });
+
+      final r = await store.importBackup(text);
+      expect(r.ok, isTrue);
+      expect(store.products.length, 1, reason: '重复编号只保留第一份');
+      expect(store.products.single.name, 'A');
+      expect(store.sales, isEmpty, reason: '非法日期/负金额的日子应被丢弃');
+      expect(store.credits.length, 1, reason: '只有丙那笔合法');
+      expect(store.credits.single.customer, '丙');
+      expect(r.skipped, greaterThan(0));
+    });
+
+    test('恢复被打断（残留标记 + 快照）→ 启动时自动回滚', () async {
+      final store = StoreService.instance;
+      // 先造一份「恢复前」的完整快照
+      store.addProduct(Product(id: 'SP0001', name: '原有的商品'));
+      final snapshot = store.exportBackup();
+
+      // 模拟「恢复写到一半被杀进程」：磁盘上已是撕裂状态，标记还在
+      SharedPreferences.setMockInitialValues({
+        'sk_seeded': true,
+        'sk_products': jsonEncode([
+          {'id': 'SP9999', 'name': '备份里的新商品'}
+        ]),
+        'sk_sales': '{}',
+        'sk_credits': '[]',
+        'sk_restoring': true,
+        'sk_restore_snapshot': snapshot,
+      });
+      await store.load();
+
+      expect(store.restoreInterrupted, isTrue);
+      expect(store.products.single.name, '原有的商品',
+          reason: '必须回滚到恢复前的快照，而不是留在撕裂状态');
+    });
+  });
 }

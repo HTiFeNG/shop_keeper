@@ -64,16 +64,34 @@ class RestoreResult {
     required this.skipped,
     this.creditCount = 0,
   })  : ok = true,
+        needsCreditConfirm = false,
         reason = '';
 
   RestoreResult.fail(this.reason)
       : ok = false,
+        needsCreditConfirm = false,
+        productCount = 0,
+        dayCount = 0,
+        skipped = 0,
+        creditCount = 0;
+
+  /// v2 老备份没有欠账（credits）字段，直接恢复会把现有欠账整体清空。
+  /// 这不算「失败」，而是要调用方先向用户确认；确认后带
+  /// `allowCreditLoss: true` 再来一次。
+  RestoreResult.needsCreditConfirm(int existingCreditCount)
+      : ok = false,
+        needsCreditConfirm = true,
+        reason = '这份备份是旧版本（v2），不含欠账数据。'
+            '继续恢复会清空现有的 $existingCreditCount 笔欠账记录。',
         productCount = 0,
         dayCount = 0,
         skipped = 0,
         creditCount = 0;
 
   final bool ok;
+
+  /// true 表示「需要用户确认会丢失欠账」，见 [RestoreResult.needsCreditConfirm]
+  final bool needsCreditConfirm;
   final String reason; // 失败原因（面向用户的一句话）
   final int productCount; // 恢复后的商品数
   final int dayCount; // 恢复后的记账天数
@@ -118,6 +136,27 @@ abstract final class BackupCodec {
     }
   }
 
+  /// 单条商品/欠账的容错解析：字段类型不对时返回 null，不抛异常
+  static Product? _tryProduct(Map<String, dynamic> json) {
+    try {
+      return Product.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Credit? _tryCredit(Map<String, dynamic> json) {
+    try {
+      return Credit.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 日期键必须是严格的 `YYYY-MM-DD`
+  static bool _isDateKey(String s) =>
+      RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(s);
+
   /// 解析备份文本。返回 null 表示「这不是一个受支持的备份文件」。
   ///
   /// **容错原则：逐条解析、能救多少救多少。** 任意一条记录损坏都不应该让
@@ -137,19 +176,27 @@ abstract final class BackupCodec {
 
     var skipped = 0;
 
+    // ---- 商品：逐条容错 + 编号去重 ----
+    // 重复编号必须挡掉：明细是按 productId 关联商品的，同一编号出现两次
+    // 会让老账指向「哪一个」变得不确定，排行与毛利都会算错。
     final products = <Product>[];
+    final seenIds = <String>{};
     for (final e in productsRaw) {
-      if (e is Map<String, dynamic>) {
-        final p = Product.fromJson(e);
-        // 编号和名称都为空的行没有意义，也编辑不了
-        if (p.id.isEmpty && p.name.isEmpty) {
-          skipped++;
-          continue;
-        }
-        products.add(p);
-      } else {
+      if (e is! Map<String, dynamic>) {
         skipped++;
+        continue;
       }
+      final p = _tryProduct(e);
+      // 编号和名称都为空的行没有意义，也编辑不了
+      if (p == null || (p.id.isEmpty && p.name.isEmpty)) {
+        skipped++;
+        continue;
+      }
+      if (p.id.isNotEmpty && !seenIds.add(p.id)) {
+        skipped++;
+        continue;
+      }
+      products.add(p);
     }
 
     final categories = categoriesRaw
@@ -157,35 +204,54 @@ abstract final class BackupCodec {
         .where((c) => c != kCategoryAll)
         .toList();
 
+    // ---- 销售记录：逐条容错；丢掉负数量/负金额的脏行 ----
+    // 本应用不支持退货冲账，负值只会让「当日合计」被莫名拉低。
     final sales = <String, DailyRecord>{};
     for (final entry in salesRaw.entries) {
       final k = entry.key;
       final v = entry.value;
-      if (k is! String || v is! Map<String, dynamic>) {
+      if (k is! String || !_isDateKey(k) || v is! Map<String, dynamic>) {
         skipped++;
         continue;
       }
-      final rec = DailyRecord.fromJson(v);
+      final rec = DailyRecord.fromJson(v, onBadItem: () => skipped++);
       // 以键为准，避免「某天列表里看得到、月度统计里却算不到」
       rec.date = k;
+      final before = rec.items.length;
+      rec.items.removeWhere((it) => it.totalPrice < 0 || it.quantity < 0);
+      skipped += before - rec.items.length;
+      if (rec.items.isEmpty) {
+        skipped++;
+        continue;
+      }
       sales[k] = rec;
     }
 
-    // v2 没有 credits 字段
+    // ---- 欠账：v2 没有 credits 字段 ----
     final credits = <Credit>[];
+    final seenCreditIds = <String>{};
     final creditsRaw = map['credits'];
     if (creditsRaw is List) {
       for (final e in creditsRaw) {
-        if (e is Map<String, dynamic>) {
-          final c = Credit.fromJson(e);
-          if (c.customer.isEmpty && c.amount == 0) {
-            skipped++;
-            continue;
-          }
-          credits.add(c);
-        } else {
+        if (e is! Map<String, dynamic>) {
           skipped++;
+          continue;
         }
+        final c = _tryCredit(e);
+        if (c == null || (c.customer.isEmpty && c.amount == 0)) {
+          skipped++;
+          continue;
+        }
+        // 金额必须为正、日期必须合法：负欠款/乱日期只会污染催款列表
+        if (c.amount < 0 || !_isDateKey(c.date)) {
+          skipped++;
+          continue;
+        }
+        if (c.id.isNotEmpty && !seenCreditIds.add(c.id)) {
+          skipped++;
+          continue;
+        }
+        credits.add(c);
       }
     }
 

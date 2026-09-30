@@ -5,6 +5,7 @@ import '../services/nutstore_sync.dart';
 import '../services/store_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_utils.dart' as du;
+import '../widgets/restore_confirm.dart';
 
 /// 坚果云同步设置。
 ///
@@ -69,15 +70,44 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     r.ok ? _toast(r.message) : _toastErr(r.message);
   }
 
-  Future<void> _upload() async {
+  Future<void> _upload({bool force = false}) async {
     _update(_currentConfig);
     if (store.products.isEmpty && store.sales.isEmpty && store.credits.isEmpty) {
       _toastErr('本机还没有任何数据，没什么可上传的');
       return;
     }
     setState(() => _busy = '正在上传…');
-    final r = await store.syncUpload();
+    var r = await store.syncUpload(force: force);
     if (!mounted) return;
+
+    // 云端那份被别的设备改过 → 先问清楚，别把别人的数据直接覆盖掉
+    if (r.needsOverwriteConfirm) {
+      setState(() => _busy = null);
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('云端有别人写过的一份'),
+          content: Text('${r.message}\n\n'
+              '如果先「从云端恢复」，拿到的是那一份；\n'
+              '如果继续上传，云端那份会被本机的数据覆盖（不可撤销）。'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppTheme.priceRed),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('仍要覆盖云端'),
+            ),
+          ],
+        ),
+      );
+      if (go != true || !mounted) return;
+      setState(() => _busy = '正在上传…');
+      r = await store.syncUpload(force: true);
+      if (!mounted) return;
+    }
+
     setState(() => _busy = null);
     if (r.ok) {
       _toast('已上传到云端。另一台设备打开「从云端恢复」就能拿到这份数据');
@@ -132,8 +162,16 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       if (ok != true || !mounted) return;
 
       setState(() => _busy = '正在恢复…');
-      final r = await store.applyRemote(file.content);
+      var r = await store.applyRemote(file.content);
       if (!mounted) return;
+      // v2 老备份不含欠账：默认拒绝，问过用户再带 allowCreditLoss 重来
+      if (r.needsCreditConfirm) {
+        setState(() => _busy = null);
+        if (!await confirmCreditLoss(context, r)) return;
+        setState(() => _busy = '正在恢复…');
+        r = await store.applyRemote(file.content, allowCreditLoss: true);
+        if (!mounted) return;
+      }
       setState(() => _busy = null);
       if (r.ok) {
         _toast('已从云端恢复：${r.productCount} 个商品、${r.dayCount} 天记录'
@@ -189,14 +227,20 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
-          if (kIsWeb) _webNotice(),
-          _statusCard(),
-          const SizedBox(height: 12),
-          _howToCard(),
-          const SizedBox(height: 12),
-          _formCard(),
-          const SizedBox(height: 12),
-          _actionsCard(configured),
+          // Web 端浏览器会拦截跨域 WebDAV 请求，同步根本跑不起来。
+          // 那就**不要**让用户在这里输入账号和应用密码 —— 否则密码会被
+          // 明文写进浏览器 localStorage，为一个永远用不上的功能白白泄露。
+          if (kIsWeb) ...[
+            _webNotice(),
+          ] else ...[
+            _statusCard(),
+            const SizedBox(height: 12),
+            _howToCard(),
+            const SizedBox(height: 12),
+            _formCard(),
+            const SizedBox(height: 12),
+            _actionsCard(configured),
+          ],
         ],
       ),
     );

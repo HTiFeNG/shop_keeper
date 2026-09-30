@@ -66,18 +66,23 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
     final q = _query.trim();
     if (q.isNotEmpty) {
       // 与商品页同一套检索：名称 / 品牌 / 条码 / 全拼 / 拼音首字母 + 相关度排序
-      final scored = <MapEntry<Product, int>>[];
-      for (final p in list) {
+      final scored = <({Product product, int score, int index})>[];
+      for (var i = 0; i < list.length; i++) {
+        final p = list[i];
         final s = SearchIndex.score(
           query: q,
           name: p.name,
           brand: p.brand,
           barcode: p.barcode,
         );
-        if (s > 0) scored.add(MapEntry(p, s));
+        if (s > 0) scored.add((product: p, score: s, index: i));
       }
-      scored.sort((a, b) => b.value.compareTo(a.value));
-      list = scored.map((e) => e.key).toList();
+      // 同分时按原下标排序（Dart 的 sort 不保证稳定）
+      scored.sort((a, b) {
+        final byScore = b.score.compareTo(a.score);
+        return byScore != 0 ? byScore : a.index.compareTo(b.index);
+      });
+      list = scored.map((e) => e.product).toList();
     }
     return list;
   }

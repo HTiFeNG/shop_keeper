@@ -14,6 +14,7 @@ import '../utils/format.dart';
 import '../widgets/date_selector.dart';
 import '../widgets/favorite_quick_bar.dart';
 import '../widgets/product_picker_dialog.dart';
+import '../widgets/restore_confirm.dart';
 import '../widgets/sale_item_card.dart';
 import '../widgets/sale_item_table.dart';
 import '../widgets/scan_page.dart';
@@ -351,8 +352,14 @@ class _SalesPageState extends State<SalesPage>
       store.dismissPendingRemote();
       return;
     }
-    final r = await store.applyPendingRemote();
+    var r = await store.applyPendingRemote();
     if (!mounted) return;
+    // v2 老备份不含欠账：默认拒绝，问过用户再带 allowCreditLoss 重来
+    if (r.needsCreditConfirm) {
+      if (!await confirmCreditLoss(context, r)) return;
+      r = await store.applyPendingRemote(allowCreditLoss: true);
+      if (!mounted) return;
+    }
     if (r.ok) {
       _toast('已从云端恢复：${r.productCount} 个商品、${r.dayCount} 天记录');
     } else {
@@ -620,10 +627,13 @@ class _SalesPageState extends State<SalesPage>
       out.add(_banner(
         icon: Icons.cloud_download_outlined,
         color: AppTheme.primaryText,
-        text: '云端有一份更新的备份（$when），'
+        text: '云端有一份没见过的备份（$when），'
             '${pending.productCount} 个商品 / ${pending.dayCount} 天记录。',
         action: _applyRemoteBackup,
         actionLabel: '查看',
+        // 「忽略」会记住这一版，不再每次启动都来问
+        secondAction: store.dismissPendingRemote,
+        secondLabel: '忽略',
       ));
     }
 
@@ -638,6 +648,14 @@ class _SalesPageState extends State<SalesPage>
         icon: Icons.warning_amber_outlined,
         color: AppTheme.primaryText,
         text: '启动时有 ${store.droppedOnLoad} 条数据损坏、已跳过。建议尽快备份并核对账目。',
+      ));
+    }
+    // 上次恢复备份中途被打断（比如恢复时被杀进程）→ 已自动回滚到恢复前的数据
+    if (store.restoreInterrupted) {
+      out.add(_banner(
+        icon: Icons.restore_outlined,
+        color: AppTheme.primaryText,
+        text: '上次恢复数据没有完成，已自动退回恢复前的状态，账目没有丢。',
       ));
     }
     if (store.saveError != null) {
@@ -677,6 +695,8 @@ class _SalesPageState extends State<SalesPage>
     required String text,
     Future<void> Function()? action,
     String? actionLabel,
+    VoidCallback? secondAction,
+    String? secondLabel,
   }) {
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -702,6 +722,14 @@ class _SalesPageState extends State<SalesPage>
                 onPressed: () => action(),
                 child: Text(actionLabel,
                     style: const TextStyle(fontSize: AppTheme.fontCaption)),
+              ),
+            if (secondAction != null && secondLabel != null)
+              TextButton(
+                onPressed: secondAction,
+                child: Text(secondLabel,
+                    style: const TextStyle(
+                        fontSize: AppTheme.fontCaption,
+                        color: AppTheme.textSecondary)),
               ),
           ],
         ),

@@ -15,6 +15,7 @@ import '../widgets/category_name_dialog.dart';
 import '../widgets/category_picker_sheet.dart';
 import '../widgets/category_sidebar.dart';
 import '../widgets/product_tile.dart';
+import '../widgets/restore_confirm.dart';
 import '../widgets/scan_page.dart';
 import 'product_edit_page.dart';
 
@@ -78,19 +79,24 @@ class _ProductManagePageState extends State<ProductManagePage> {
     if (q.isNotEmpty) {
       // 名称 / 品牌 / 条码 / 汉字全拼 / 拼音首字母 混合匹配，并按相关度排序。
       // 例：输 "kl" 出「可口可乐」，输 "nfsq" 出「农夫山泉」。
-      final scored = <MapEntry<Product, int>>[];
-      for (final p in list) {
+      final scored = <({Product product, int score, int index})>[];
+      for (var i = 0; i < list.length; i++) {
+        final p = list[i];
         final s = SearchIndex.score(
           query: q,
           name: p.name,
           brand: p.brand,
           barcode: p.barcode,
         );
-        if (s > 0) scored.add(MapEntry(p, s));
+        if (s > 0) scored.add((product: p, score: s, index: i));
       }
-      // 稳定排序：相关度相同时保持商品库原有顺序（不会每次搜索都跳来跳去）
-      scored.sort((a, b) => b.value.compareTo(a.value));
-      list = scored.map((e) => e.key).toList();
+      // 显式的二级排序键（原下标）。Dart 的 List.sort **不保证稳定**，
+      // 只按分数排的话，同分商品每次搜索的先后顺序可能都不一样。
+      scored.sort((a, b) {
+        final byScore = b.score.compareTo(a.score);
+        return byScore != 0 ? byScore : a.index.compareTo(b.index);
+      });
+      list = scored.map((e) => e.product).toList();
     }
     return list;
   }
@@ -317,8 +323,14 @@ class _ProductManagePageState extends State<ProductManagePage> {
       );
       if (ok != true) return;
 
-      final r = await store.importBackup(text);
+      var r = await store.importBackup(text);
       if (!mounted) return;
+      // v2 老备份不含欠账：默认拒绝，问过用户再带 allowCreditLoss 重来
+      if (r.needsCreditConfirm) {
+        if (!await confirmCreditLoss(context, r)) return;
+        r = await store.importBackup(text, allowCreditLoss: true);
+        if (!mounted) return;
+      }
       if (!r.ok) {
         _toastErr('恢复失败：${r.reason}');
         return;

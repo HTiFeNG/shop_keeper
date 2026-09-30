@@ -56,10 +56,14 @@ class NutstoreConfig {
         autoSync: autoSync ?? this.autoSync,
       );
 
-  Map<String, dynamic> toJson() => {
+  /// [includeSecret] = false 时**不写出应用密码**。
+  ///
+  /// 密码单独存进平台安全存储（Android Keystore），落在 shared_preferences 里
+  /// 的配置就只有账号和路径。仅当安全存储写入失败时才回退成 true。
+  Map<String, dynamic> toJson({bool includeSecret = true}) => {
         'baseUrl': baseUrl,
         'account': account,
-        'appPassword': appPassword,
+        if (includeSecret) 'appPassword': appPassword,
         'remotePath': remotePath,
         'autoSync': autoSync,
       };
@@ -75,10 +79,21 @@ class NutstoreConfig {
 
 /// 一次同步动作的结果
 class SyncResult {
-  SyncResult.ok(this.message) : ok = true;
-  SyncResult.fail(this.message) : ok = false;
+  SyncResult.ok(this.message)
+      : ok = true,
+        needsOverwriteConfirm = false;
+  SyncResult.fail(this.message)
+      : ok = false,
+        needsOverwriteConfirm = false;
+
+  /// 云端那份和我们上次看到的不是同一份（别的设备写过）。
+  /// 这不是「失败」，而是要调用方先向用户确认，确认后带 `force: true` 重来。
+  SyncResult.conflict(this.message)
+      : ok = false,
+        needsOverwriteConfirm = true;
 
   final bool ok;
+  final bool needsOverwriteConfirm;
   final String message; // 面向用户的一句话
 }
 
@@ -134,7 +149,9 @@ abstract final class NutstoreSync {
       case 507:
         return '坚果云空间不足，无法写入';
       default:
-        return '请求失败（HTTP $code）${detail.isEmpty ? '' : '：$detail'}';
+        return detail.isEmpty || detail.length > 80
+            ? '请求失败（HTTP $code）'
+            : '请求失败（HTTP $code）：${detail.substring(0, 80)}';
     }
   }
 
@@ -166,13 +183,17 @@ abstract final class NutstoreSync {
     if (guard != null) return guard;
     if (!c.isConfigured) return SyncResult.fail('请先填写账号与应用密码');
 
-    final url = _uri(c, _normalizePath(c.remotePath));
+    final client = http.Client();
     try {
-      final req = http.Request('PROPFIND', url)
+      // _uri 放进 try：配置被改坏时 Uri.parse 会抛 FormatException，
+      // 之前它在 try 外面，异常会外泄并把设置页的按钮永久锁死。
+      final req = http.Request('PROPFIND', _uri(c, _normalizePath(c.remotePath)))
         ..headers.addAll(_authHeaders(c))
         ..headers['Depth'] = '0'
         ..headers['Content-Type'] = 'application/xml; charset=utf-8';
-      final res = await http.Client().send(req).timeout(_timeout);
+      final res = await client.send(req).timeout(_timeout);
+      // 响应体必须读掉，否则连接不会回池/释放
+      await res.stream.drain<void>();
 
       if (res.statusCode == 207) {
         return SyncResult.ok('连接成功，云端已有备份文件，可以直接下载');
@@ -187,6 +208,8 @@ abstract final class NutstoreSync {
       return SyncResult.fail(_friendly(res.statusCode, ''));
     } catch (e) {
       return SyncResult.fail(_reason(e));
+    } finally {
+      client.close();
     }
   }
 
@@ -213,7 +236,16 @@ abstract final class NutstoreSync {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         return SyncResult.ok('已上传到坚果云');
       }
+      // PUT 上的 404/405/409 基本都是「目录不存在或没有写权限」，
+      // 复用 _friendly 会误报成「远端文件不存在」，用户会一直重试。
+      if (res.statusCode == 404 ||
+          res.statusCode == 405 ||
+          res.statusCode == 409) {
+        return SyncResult.fail('云端目录不存在或不可写，请检查「云端存放路径」');
+      }
       return SyncResult.fail(_friendly(res.statusCode, res.body));
+    } on SyncException {
+      rethrow; // 目录创建阶段已经给出了人话，别再被 _reason 包一层
     } catch (e) {
       return SyncResult.fail(_reason(e));
     }
@@ -256,12 +288,16 @@ abstract final class NutstoreSync {
   static Future<DateTime?> remoteModified(NutstoreConfig c) async {
     if (kIsWeb || !c.isConfigured) return null;
     final path = _normalizePath(c.remotePath);
+    final client = http.Client();
     try {
       final req = http.Request('PROPFIND', _uri(c, path))
         ..headers.addAll(_authHeaders(c))
         ..headers['Depth'] = '0';
-      final res = await http.Client().send(req).timeout(_timeout);
-      if (res.statusCode != 207) return null;
+      final res = await client.send(req).timeout(_timeout);
+      if (res.statusCode != 207) {
+        await res.stream.drain<void>();
+        return null;
+      }
       final xml = await res.stream.bytesToString();
       final m = RegExp(r'<[^>]*getlastmodified[^>]*>([^<]+)<',
               caseSensitive: false)
@@ -270,6 +306,8 @@ abstract final class NutstoreSync {
       return DateTime.tryParse(m.group(1)!.trim())?.toLocal();
     } catch (_) {
       return null;
+    } finally {
+      client.close();
     }
   }
 
@@ -278,22 +316,30 @@ abstract final class NutstoreSync {
     final parts = filePath.split('/').where((s) => s.isNotEmpty).toList();
     if (parts.length <= 1) return; // 直接在根目录放文件，无需建目录
 
-    var acc = '';
-    for (var i = 0; i < parts.length - 1; i++) {
-      acc += '/${parts[i]}';
-      try {
-        final req = http.Request('MKCOL', _uri(c, acc))
-          ..headers.addAll(_authHeaders(c));
-        final res = await http.Client().send(req).timeout(_timeout);
-        // 201 创建成功；405 已存在；301/409 语义上也可继续
-        if (res.statusCode == 401 || res.statusCode == 403) {
-          throw SyncException(_friendly(res.statusCode, ''));
+    // 所有层级共用一个 client 并在结束时关闭：原来每层 new 一个且从不关闭，
+    // 失败重试时会把连接一层层堆起来
+    final client = http.Client();
+    try {
+      var acc = '';
+      for (var i = 0; i < parts.length - 1; i++) {
+        acc += '/${parts[i]}';
+        try {
+          final req = http.Request('MKCOL', _uri(c, acc))
+            ..headers.addAll(_authHeaders(c));
+          final res = await client.send(req).timeout(_timeout);
+          await res.stream.drain<void>();
+          // 201 创建成功；405 已存在；301/409 语义上也可继续
+          if (res.statusCode == 401 || res.statusCode == 403) {
+            throw SyncException(_friendly(res.statusCode, ''));
+          }
+        } on SyncException {
+          rethrow;
+        } catch (_) {
+          // 建目录失败不阻塞上传：很多 WebDAV 服务在根目录直接 PUT 也能成功
         }
-      } on SyncException {
-        rethrow;
-      } catch (_) {
-        // 建目录失败不阻塞上传：很多 WebDAV 服务在根目录直接 PUT 也能成功
       }
+    } finally {
+      client.close();
     }
   }
 }

@@ -1,10 +1,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 摄像头扫码权限 -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 坚果云 WebDAV 同步需要联网。必须**显式声明**：此前这项权限是从
+         mobile_scanner → ML Kit 传递依赖进来的（manifest merger 报告可证），
+         哪天换掉扫码插件，同步就会莫名全部失败。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="店铺管家"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
+        <!-- allowBackup=false：应用私有数据里含坚果云账号与应用密码，
+             默认的自动备份会把它复制到 Google Drive，等于把「整个网盘的
+             读写权限」带出设备。宁可不参与云备份（应用自身的 JSON 备份
+             已经覆盖了迁移场景）。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

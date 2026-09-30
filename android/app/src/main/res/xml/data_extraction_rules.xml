@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ 的备份 / 换机迁移规则。
+
+  应用私有数据里含坚果云账号与应用密码（即使密码已进安全存储，配置本身
+  也不该到处乱跑），而默认的「云备份」会把这些复制到用户的 Google Drive。
+  因此这里明确排除应用数据；换机迁移（device-transfer）也一并排除 ——
+  本应用自带 JSON 备份与坚果云同步两条迁移通道，首页还有备份提醒。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+    </device-transfer>
+</data-extraction-rules>

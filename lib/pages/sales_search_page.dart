@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/product.dart';
 import '../models/sale.dart';
 import '../services/store_service.dart';
 import '../theme/app_theme.dart';
@@ -107,12 +108,28 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
 
   /// 一行明细是否命中关键字。
   ///
-  /// 纯数字输入时额外比单价 / 总价的文本形式 —— 店主常常记得金额不记得名字。
-  bool _match(SaleItem it, String q) {
-    if (SearchIndex.matches(query: q, name: it.name)) return true;
-    if (RegExp(r'^[\d.]+$').hasMatch(q)) {
-      if (fmtPrice(it.totalPrice).contains(q)) return true;
-      if (fmtPrice(it.unitPrice).contains(q)) return true;
+  /// - 文本：走 SearchIndex（商品名 / 拼音全拼 / 首字母），**并带上品牌与条码**
+  ///   —— 行上本来就显示了品牌，搜不到它说不过去；
+  /// - 纯数字：按**金额精确匹配**（单价或总价）。
+  ///   旧实现用 `fmtPrice(...).contains(q)`，输入「1」会把 ¥1.50、¥21.00、
+  ///   ¥1000 全都算命中，结果条数与汇总金额随之失去意义。
+  bool _match(SaleItem it, String q, Map<String, Product> byId) {
+    final p = it.productId == null ? null : byId[it.productId];
+    final brand = it.brand.isNotEmpty ? it.brand : (p?.brand ?? '');
+    if (SearchIndex.matches(
+      query: q,
+      name: it.name,
+      brand: brand,
+      barcode: p?.barcode ?? '',
+    )) {
+      return true;
+    }
+
+    final qv = double.tryParse(q);
+    if (qv != null) {
+      // 留 1 分容差，避开浮点误差
+      if ((it.totalPrice - qv).abs() < 0.005) return true;
+      if ((it.unitPrice - qv).abs() < 0.005) return true;
     }
     return false;
   }
@@ -121,11 +138,13 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
   List<MapEntry<String, List<SaleItem>>> _results() {
     final q = _query.trim();
     final records = store.recordsInRange(_start, _end);
+    // 商品索引建一次，避免逐行线性扫商品表
+    final byId = {for (final p in store.products) p.id: p};
     final out = <MapEntry<String, List<SaleItem>>>[];
     for (final rec in records) {
       final hit = q.isEmpty
           ? rec.items
-          : rec.items.where((it) => _match(it, q)).toList();
+          : rec.items.where((it) => _match(it, q, byId)).toList();
       if (hit.isNotEmpty) out.add(MapEntry(rec.date, hit));
     }
     return out;
@@ -162,7 +181,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                   controller: _searchCtrl,
                   focusNode: _searchFocus,
                   decoration: InputDecoration(
-                    hintText: '商品名 / 拼音首字母 / 金额，留空看全部',
+                    hintText: '商品名 / 拼音 / 品牌 / 条码 / 金额，留空看全部',
                     prefixIcon: const Icon(Icons.search, size: 20),
                     suffixIcon: _query.isEmpty
                         ? null
@@ -257,12 +276,17 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
               ],
             ),
           ),
-          Text(
-            formatCurrency(total),
-            style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.priceRed),
+          Flexible(
+            child: Text(
+              formatCurrency(total),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.priceRed),
+            ),
           ),
         ],
       ),
@@ -292,16 +316,27 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                 children: [
                   Icon(Icons.event, size: 16, color: AppTheme.primaryText),
                   const SizedBox(width: 6),
-                  Text(du.dayLabel(date),
-                      style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.primaryText)),
-                  const Spacer(),
-                  Text('$dayQty 件 · ${formatCurrency(dayTotal)}',
-                      style: const TextStyle(
-                          fontSize: AppTheme.fontCaption,
-                          color: AppTheme.primaryText)),
+                  // 日期占剩余空间把金额顶到右侧；金额可压缩并省略 ——
+                  // 金额一大（¥1,002.00）或系统字号调大时，这一行原来会溢出。
+                  Expanded(
+                    child: Text(du.dayLabel(date),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.primaryText)),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text('$dayQty 件 · ${formatCurrency(dayTotal)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                            fontSize: AppTheme.fontCaption,
+                            color: AppTheme.primaryText)),
+                  ),
                   const SizedBox(width: 4),
                   const Icon(Icons.chevron_right,
                       size: 18, color: AppTheme.primaryText),

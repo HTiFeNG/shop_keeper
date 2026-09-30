@@ -241,6 +241,74 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('查账页支持品牌/条码搜索，且金额是精确匹配', (tester) async {
+    useSmallPhone(tester);
+    final today = du.todayKey();
+    await resetStoreWith({
+      'sk_seeded': true,
+      'sk_products': jsonEncode([
+        {
+          'id': 'SP0001',
+          'name': '矿泉水',
+          'brand': '农夫山泉',
+          'barcode': '6901234567890',
+          'retailPrice': 2,
+          'purchasePrice': 1,
+        }
+      ]),
+      'sk_sales': jsonEncode({
+        today: {
+          'date': today,
+          'items': [
+            {
+              'id': 's1',
+              'name': '矿泉水',
+              'brand': '农夫山泉',
+              'quantity': 1,
+              'unitPrice': 2,
+              'totalPrice': 2,
+              'productId': 'SP0001',
+            },
+            {
+              'id': 's2',
+              'name': '大件货',
+              'quantity': 1,
+              'unitPrice': 1000,
+              'totalPrice': 1000,
+              'productId': null,
+            },
+          ],
+        },
+      }),
+    });
+    await pumpApp(tester);
+    await tester.tap(find.byIcon(Icons.manage_search));
+    await tester.pumpAndSettle();
+
+    Future<void> search(String q) async {
+      await tester.enterText(find.byType(TextField).first, q);
+      await tester.pumpAndSettle();
+    }
+
+    // 品牌：商品名里没有「农夫」二字，只能靠品牌命中
+    await search('农夫');
+    expect(find.text('矿泉水'), findsWidgets, reason: '应按品牌搜到');
+
+    // 条码
+    await search('6901234567890');
+    expect(find.text('矿泉水'), findsWidgets, reason: '应按条码搜到');
+
+    // 金额必须精确匹配：输 100 不能命中 ¥1000（旧的 contains 写法会命中）
+    await search('100');
+    expect(find.text('大件货'), findsNothing,
+        reason: '输 100 不应命中 ¥1000（旧的 contains 写法会命中）');
+
+    // 精确金额可以命中
+    await search('1000');
+    expect(find.text('大件货'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('记账后视图自动滚到新增的那一行', (tester) async {
     useSmallPhone(tester);
 

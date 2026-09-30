@@ -43,8 +43,10 @@ class StoreService extends ChangeNotifier {
   static const String _kNextSeq = 'sk_next_seq';
   static const String _kLastBackup = 'sk_last_backup';
   static const String _kRestoreSnapshot = 'sk_restore_snapshot';
+  static const String _kRestoring = 'sk_restoring';
   static const String _kSyncConfig = 'sk_sync_config';
   static const String _kSyncLast = 'sk_sync_last';
+  static const String _kSyncSeen = 'sk_sync_seen';
 
   List<Product> products = [];
   List<String> categories = []; // 不含固定项「全部」「未分类」
@@ -83,6 +85,9 @@ class StoreService extends ChangeNotifier {
   /// 是否存在「恢复前快照」（可一键撤销上一次恢复）
   bool hasRestoreSnapshot = false;
 
+  /// 上次「恢复备份」是否在写盘途中被打断、已由启动流程自动回滚到快照
+  bool restoreInterrupted = false;
+
   /// 商品页「记一笔」→ 首页预填一行 的跨 Tab 通知（解耦）
   final ValueNotifier<SalePrefill?> salePrefill = ValueNotifier<SalePrefill?>(null);
 
@@ -96,9 +101,24 @@ class StoreService extends ChangeNotifier {
   /// 上次同步失败的原因（null = 正常）
   String? lastSyncError;
 
-  /// 启动时发现「云端比本机新」的待处理备份（不会自动覆盖本地）
+  /// 启动时发现「云端有没见过的一份」的待处理备份（不会自动覆盖本地）
   BackupPreview? pendingRemotePreview;
   String? _pendingRemoteText;
+  DateTime? _pendingRemoteModified;
+
+  /// 上次看到的**远端文件修改时间**。
+  ///
+  /// 用它判断「云端有没有被别人改过」：只拿同一个服务端给出的值跟自己比，
+  /// 因此不受两台设备的时钟偏差影响。旧实现拿远端 exportedAt（对方时钟）
+  /// 跟本机 lastSyncAt（本机时钟）比，时钟一偏就会误报或永不提示。
+  DateTime? lastSeenRemoteMtime;
+
+  /// true = 云端当前那份就是我们上传的（上传后读不到 mtime 时的兜底标记）
+  bool remoteIsOurs = false;
+
+  /// 上次同步（上传或恢复）的那份备份的 exportedAt。
+  /// 用来确认「云端内容就是这份」，避免把自己的上传当成别人改的。
+  String? lastSyncedExportedAt;
 
   bool get hasPendingRemote => _pendingRemoteText != null;
 
@@ -121,45 +141,124 @@ class StoreService extends ChangeNotifier {
 
   /// 应用启动时调用。
   ///
-  /// 容错原则是**逐条解析、能救多少救多少**。旧实现用 `as List` 配合
-  /// `.map().toList()`，任意一条记录损坏都会让整个列表抛异常并被 `catch`
-  /// 清空，而 `ready` 仍为 true、界面显示「暂无商品」；随后用户随便改一下
-  /// 就会把空列表写回磁盘，把好数据彻底销毁。
+  /// 两条硬性保证：
+  /// 1. **逐条解析、能救多少救多少**：任何单条记录损坏只被计入 [droppedOnLoad]，
+  ///    不会让整份数据作废，更不会让启动挂掉。
+  /// 2. **先全部解析完再整体赋值**：解析中途出错时内存不会被改成「清空一半」
+  ///    的状态 —— 旧实现先 `products = []` 再逐段解析，一旦抛异常就留下空内存，
+  ///    用户随便改一下就把空数据写回磁盘，把好数据彻底销毁。
+  ///    整个流程也包在 try/catch 里：出任何意外都会置 [loadError] 并让
+  ///    `ready = true`，绝不让用户卡死在闪屏页。
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
 
-    products = [];
-    sales = {};
-    credits = [];
-    droppedOnLoad = 0;
-    loadError = null;
+    // 先解析到局部变量，最后一次性赋值
+    final newProducts = <Product>[];
+    final newSales = <String, DailyRecord>{};
+    final newCredits = <Credit>[];
+    final newCategories = (prefs.getStringList(_kCategories) ?? [])
+      ..remove(kCategoryAll);
+    var dropped = 0;
+    String? error;
 
-    // ---- 商品 ----
-    final productsRaw = prefs.getString(_kProducts);
-    if (productsRaw != null && productsRaw.isNotEmpty) {
-      final decoded = _tryDecode(productsRaw);
-      if (decoded is List) {
-        for (final e in decoded) {
-          if (e is Map<String, dynamic>) {
-            final p = Product.fromJson(e);
+    try {
+      // ---- 商品 ----
+      final productsRaw = prefs.getString(_kProducts);
+      if (productsRaw != null && productsRaw.isNotEmpty) {
+        final decoded = _tryDecode(productsRaw);
+        if (decoded is List) {
+          for (final e in decoded) {
+            final p = e is Map<String, dynamic> ? _tryProduct(e) : null;
             // 编号和名称都为空的行没有意义，也编辑不了
-            if (p.id.isNotEmpty || p.name.isNotEmpty) {
-              products.add(p);
+            if (p == null || (p.id.isEmpty && p.name.isEmpty)) {
+              dropped++;
             } else {
-              droppedOnLoad++;
+              newProducts.add(p);
             }
-          } else {
-            droppedOnLoad++;
           }
+        } else {
+          error = '商品数据已损坏，无法读取';
         }
-      } else {
-        loadError = '商品数据已损坏，无法读取';
       }
+
+      // ---- 销售记录 ----
+      final salesRaw = prefs.getString(_kSales);
+      if (salesRaw != null && salesRaw.isNotEmpty) {
+        final decoded = _tryDecode(salesRaw);
+        if (decoded is Map) {
+          decoded.forEach((k, v) {
+            if (k is String && v is Map<String, dynamic>) {
+              // items 里单条坏数据只跳过它自己（见 DailyRecord.fromJson）
+              final rec = DailyRecord.fromJson(v, onBadItem: () => dropped++);
+              // 键与记录内 date 不一致时一律以键为准，
+              // 否则会出现「某天列表里看得到、月度统计里却算不到」。
+              rec.date = k;
+              newSales[k] = rec;
+            } else {
+              dropped++;
+            }
+          });
+        } else {
+          error ??= '营业额数据已损坏，无法读取';
+        }
+      }
+
+      // ---- 赊账台账 ----
+      final creditsRaw = prefs.getString(_kCredits);
+      if (creditsRaw != null && creditsRaw.isNotEmpty) {
+        final decoded = _tryDecode(creditsRaw);
+        if (decoded is List) {
+          for (final e in decoded) {
+            final c = e is Map<String, dynamic> ? _tryCredit(e) : null;
+            if (c == null || (c.customer.isEmpty && c.amount == 0)) {
+              dropped++;
+            } else {
+              newCredits.add(c);
+            }
+          }
+        } else {
+          error ??= '欠账数据已损坏，无法读取';
+        }
+      }
+    } catch (_) {
+      // 兜底：没预料到的异常也不该让 App 卡在启动页
+      error ??= '数据读取失败';
     }
 
-    // ---- 分类 ----
-    categories = prefs.getStringList(_kCategories) ?? [];
-    categories.remove(kCategoryAll);
+    // ---- 上次「恢复备份」中途被打断 → 回滚到恢复前的快照 ----
+    // importBackup 会先写快照、再置这个标记、最后才改数据；标记还在说明
+    // 当时被杀了进程，磁盘上可能处于「新商品 + 旧营业额」的撕裂状态。
+    // 快照是一份完整一致的数据，用它回滚是唯一可靠的修法。
+    var interrupted = false;
+    if (prefs.getBool(_kRestoring) ?? false) {
+      final snap = prefs.getString(_kRestoreSnapshot);
+      final rollback = snap == null ? null : BackupCodec.decode(snap);
+      if (rollback != null) {
+        newProducts
+          ..clear()
+          ..addAll(rollback.products);
+        newSales
+          ..clear()
+          ..addAll(rollback.sales);
+        newCredits
+          ..clear()
+          ..addAll(rollback.credits);
+        newCategories
+          ..clear()
+          ..addAll(rollback.categories.where((c) => c != kCategoryAll));
+        interrupted = true;
+      }
+      await prefs.setBool(_kRestoring, false);
+    }
+
+    // ---- 一次性赋值 ----
+    products = newProducts;
+    sales = newSales;
+    credits = newCredits;
+    categories = newCategories;
+    droppedOnLoad = dropped;
+    loadError = error;
+    restoreInterrupted = interrupted;
 
     // ---- 首启询问语义：不再自动载入示例数据 ----
     seeded = prefs.getBool(_kSeeded) ?? false;
@@ -167,50 +266,10 @@ class StoreService extends ChangeNotifier {
     hasRestoreSnapshot =
         (prefs.getString(_kRestoreSnapshot) ?? '').isNotEmpty;
 
-    // ---- 销售记录 ----
-    final salesRaw = prefs.getString(_kSales);
-    if (salesRaw != null && salesRaw.isNotEmpty) {
-      final decoded = _tryDecode(salesRaw);
-      if (decoded is Map) {
-        decoded.forEach((k, v) {
-          if (k is String && v is Map<String, dynamic>) {
-            final rec = DailyRecord.fromJson(v);
-            // 键与记录内 date 不一致时一律以键为准，
-            // 否则会出现「某天列表里看得到、月度统计里却算不到」。
-            rec.date = k;
-            sales[k] = rec;
-          } else {
-            droppedOnLoad++;
-          }
-        });
-      } else {
-        loadError = '营业额数据已损坏，无法读取';
-      }
-    }
-
-    // ---- 赊账台账 ----
-    final creditsRaw = prefs.getString(_kCredits);
-    if (creditsRaw != null && creditsRaw.isNotEmpty) {
-      final decoded = _tryDecode(creditsRaw);
-      if (decoded is List) {
-        for (final e in decoded) {
-          if (e is Map<String, dynamic>) {
-            final c = Credit.fromJson(e);
-            if (c.customer.isNotEmpty || c.amount != 0) {
-              credits.add(c);
-            } else {
-              droppedOnLoad++;
-            }
-          } else {
-            droppedOnLoad++;
-          }
-        }
-      } else {
-        loadError = '欠账数据已损坏，无法读取';
-      }
-    }
-
     // ---- 云同步配置 ----
+    // 注：应用密码目前与配置一起存在 shared_preferences（应用私有目录）。
+    // 不参与 Android 自动备份（见 AndroidManifest 的 allowBackup=false），
+    // 因此不会被复制到 Google Drive。Web 端不提供填写入口，不会落盘。
     final syncRaw = prefs.getString(_kSyncConfig);
     if (syncRaw != null && syncRaw.isNotEmpty) {
       final decoded = _tryDecode(syncRaw);
@@ -219,6 +278,17 @@ class StoreService extends ChangeNotifier {
       }
     }
     lastSyncAt = DateTime.tryParse(prefs.getString(_kSyncLast) ?? '');
+    // 云端「已阅」标记（版本令牌 + 内容标识 + 是否是自己写的）
+    final seenRaw = prefs.getString(_kSyncSeen);
+    if (seenRaw != null && seenRaw.isNotEmpty) {
+      final seen = _tryDecode(seenRaw);
+      if (seen is Map<String, dynamic>) {
+        lastSeenRemoteMtime =
+            DateTime.tryParse(seen['mtime'] as String? ?? '');
+        remoteIsOurs = seen['ours'] as bool? ?? false;
+        lastSyncedExportedAt = seen['expo'] as String?;
+      }
+    }
 
     // ---- 编号序列 ----
     // 必须大于「现有商品 ∪ 历史销售引用过」的最大编号，
@@ -228,6 +298,24 @@ class StoreService extends ChangeNotifier {
 
     ready = true;
     notifyListeners();
+  }
+
+  /// 单条商品的容错解析：字段类型不对时返回 null，不抛异常
+  static Product? _tryProduct(Map<String, dynamic> json) {
+    try {
+      return Product.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 单条赊账的容错解析
+  static Credit? _tryCredit(Map<String, dynamic> json) {
+    try {
+      return Credit.fromJson(json);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 首启弹窗选「载入示例数据」：24 商品 + 5 分类；选「从空开始」调用 markSeeded。
@@ -754,11 +842,14 @@ class StoreService extends ChangeNotifier {
   // ==================== 备份 / 恢复 ====================
 
   /// 导出全部数据为单 JSON 字符串（v3：商品 + 分类 + 销售 + 赊账）
-  String exportBackup() => BackupCodec.encode(
+  ///
+  /// [at] 可显式指定 `exportedAt`，便于云同步记住「这份就是我传上去的那份」。
+  String exportBackup({DateTime? at}) => BackupCodec.encode(
         products: products,
         categories: categories,
         sales: sales,
         credits: credits,
+        now: at,
       );
 
   /// 记下「刚刚成功备份过」，供首页提醒使用。
@@ -776,16 +867,28 @@ class StoreService extends ChangeNotifier {
 
   /// 从备份 JSON 恢复。
   ///
-  /// 分三阶段，关键点是**确认解析全部成功之后才替换内存**：
-  /// ① 全部解析到临时变量并校验（坏行跳过并计数）；
-  /// ② 把当前数据存成「恢复前快照」，再整体替换；
-  /// ③ 落盘，任一步写入失败就回滚到快照。
+  /// 分三阶段，关键点是**确认解析全部成功之后才替换内存**，并且写盘过程带
+  /// 「中断自愈」：
+  /// ① 解析到临时变量并校验（坏行跳过并计数），失败不动任何数据；
+  /// ② 先把当前数据写成「恢复前快照」，再置 `sk_restoring` 标记，最后整体替换；
+  /// ③ 落盘成功后清除标记。
   ///
-  /// 旧实现一边赋值一边解析，中途抛异常时内存已被部分替换，界面却提示
-  /// 「格式不对，恢复失败」——用户以为没动过，实际已经变成「备份的商品 +
-  /// 原来的营业额」，下一次编辑就把这个半恢复状态落盘。
-  Future<RestoreResult> importBackup(String jsonText) async {
-    final payload = BackupCodec.decode(jsonText);
+  /// 若在 ② 与 ③ 之间被杀进程，下次启动时 [load] 会看到标记仍在，用快照把
+  /// 数据回滚 —— 磁盘上那份「新商品 + 旧营业额」的撕裂状态因此可以自愈。
+  ///
+  /// [allowCreditLoss]：v2 老备份没有欠账（credits）字段，恢复它会把现有欠账
+  /// 整体清空。默认拒绝并要求调用方先向用户确认，确认后带 true 重来。
+  Future<RestoreResult> importBackup(
+    String jsonText, {
+    bool allowCreditLoss = false,
+  }) async {
+    final BackupPayload? payload;
+    try {
+      payload = BackupCodec.decode(jsonText);
+    } catch (_) {
+      // decode 内部已逐条容错，这里只是兜底，保证异常不外泄到界面
+      return RestoreResult.fail('这不是备份文件，无法解析');
+    }
     if (payload == null) {
       return RestoreResult.fail('这不是备份文件，无法解析');
     }
@@ -795,11 +898,24 @@ class StoreService extends ChangeNotifier {
       return RestoreResult.fail('备份里没有任何商品，已取消恢复以保护现有数据');
     }
 
-    // ---- 阶段二：存快照 → 整体替换 ----
+    // 保护：v2 老备份不含欠账，直接恢复会把现有欠账整体清空
+    if (payload.version < 3 && credits.isNotEmpty && !allowCreditLoss) {
+      return RestoreResult.needsCreditConfirm(credits.length);
+    }
+
+    // ---- 阶段二：存快照 → 置标记 → 整体替换 ----
     final snapshot = exportBackup();
     // seeded / 序号不属于业务数据，不在备份里，回滚时单独还原
     final prevSeeded = seeded;
     final prevNextSeq = _nextSeq;
+
+    // 快照必须先写成功：它是恢复被打断后唯一能回到原状态的东西
+    try {
+      await _writeRestoreSnapshot(snapshot);
+    } catch (_) {
+      return RestoreResult.fail('无法写入恢复前快照，已取消恢复（请检查存储空间）');
+    }
+    await _writeRestoring(true);
 
     products = payload.products;
     categories = payload.categories;
@@ -807,12 +923,12 @@ class StoreService extends ChangeNotifier {
     credits = payload.credits;
     seeded = true;
     _syncSeq();
+    hasRestoreSnapshot = true;
 
     // ---- 阶段三：落盘；失败则**内存 + 磁盘一起回滚** ----
     try {
       await _writeAll();
-      await _writeRestoreSnapshot(snapshot);
-      hasRestoreSnapshot = true;
+      await _writeRestoring(false);
     } catch (_) {
       final rollback = BackupCodec.decode(snapshot);
       if (rollback != null) {
@@ -823,6 +939,7 @@ class StoreService extends ChangeNotifier {
       }
       seeded = prevSeeded;
       _nextSeq = prevNextSeq;
+      hasRestoreSnapshot = false;
 
       // 关键：必须把回滚后的内存**重新写回磁盘**。
       // 上面的多步写入里，前面几步可能已经成功提交（例如商品 / 分类已换成
@@ -830,8 +947,9 @@ class StoreService extends ChangeNotifier {
       // 撕裂状态，且快照也没写成功 —— 用户杀进程重启后原数据再也找不回来。
       try {
         await _writeAll();
+        await _writeRestoring(false);
       } catch (_) {
-        // 磁盘彻底不可写：内存至少还是对的，下面提示用户立刻导出备份
+        // 磁盘彻底不可写：标记留着，下次启动会再用快照回滚一次
         saveError = '保存失败，请立即导出备份';
       }
       notifyListeners();
@@ -872,12 +990,39 @@ class StoreService extends ChangeNotifier {
   Future<SyncResult> testSync() => NutstoreSync.test(syncConfig);
 
   /// 上传：本地 → 云端
-  Future<SyncResult> syncUpload() async {
-    final r = await NutstoreSync.upload(syncConfig, exportBackup());
+  Future<SyncResult> syncUpload({bool force = false}) async {
+    final at = DateTime.now();
+
+    // 上传前先确认「云端那份还是我们上次看到的那一份」。
+    // 只比较服务端给出的文件时间是否变过，不做跨设备时钟比较。
+    if (!force) {
+      final mtime = await NutstoreSync.remoteModified(syncConfig);
+      final changedSinceSeen = mtime != null &&
+          !remoteIsOurs &&
+          mtime != lastSeenRemoteMtime;
+      if (changedSinceSeen) {
+        return SyncResult.conflict(
+            '云端那份备份比本机上次看到的更新（可能有另一台设备写过）。'
+            '上传会把云端那份覆盖掉。');
+      }
+    }
+
+    final text = exportBackup(at: at);
+    final r = await NutstoreSync.upload(syncConfig, text);
     if (r.ok) {
-      lastSyncAt = DateTime.now();
+      lastSyncAt = at;
+      lastSyncedExportedAt = at.toIso8601String();
       lastSyncError = null;
+      // 记下上传后的远端文件时间，免得下次启动把自己的上传当成「别人改过」
+      final m = await NutstoreSync.remoteModified(syncConfig);
+      if (m != null) {
+        lastSeenRemoteMtime = m;
+        remoteIsOurs = false;
+      } else {
+        remoteIsOurs = true; // 读不到就先认定「远端现在是我们写的」
+      }
       markBackedUp(); // 云端有备份 = 已备份，首页提醒随之消失
+      _persistSyncSeen();
     } else {
       lastSyncError = r.message;
     }
@@ -898,14 +1043,29 @@ class StoreService extends ChangeNotifier {
   }
 
   /// 把远端文本恢复进本地（内部走 importBackup，因此自带快照 + 可撤销）
-  Future<RestoreResult> applyRemote(String text) async {
-    final r = await importBackup(text);
+  ///
+  /// [allowCreditLoss] 见 [importBackup]：v2 老备份不含欠账，需用户确认后才清空。
+  Future<RestoreResult> applyRemote(String text,
+      {bool allowCreditLoss = false}) async {
+    final r = await importBackup(text, allowCreditLoss: allowCreditLoss);
     if (r.ok) {
       lastSyncAt = DateTime.now();
       lastSyncError = null;
+      // 记住这份内容与远端版本，避免下次启动又把同一份当成「新的」
+      lastSyncedExportedAt =
+          previewBackup(text)?.exportedAt ?? lastSyncedExportedAt;
+      final m = await NutstoreSync.remoteModified(syncConfig);
+      if (m != null) {
+        lastSeenRemoteMtime = m;
+        remoteIsOurs = false;
+      } else {
+        remoteIsOurs = true;
+      }
+      _persistSyncSeen();
       _persistSyncLast();
       pendingRemotePreview = null;
       _pendingRemoteText = null;
+      _pendingRemoteModified = null;
       notifyListeners();
     }
     return r;
@@ -913,46 +1073,73 @@ class StoreService extends ChangeNotifier {
 
   /// 启动时的自动同步检查。
   ///
-  /// **只读比对，绝不静默覆盖本地数据**：发现云端比本机新时，把预览挂在
-  /// [pendingRemotePreview] 上由 UI 提示用户，是否恢复完全由用户决定。
-  /// 启动阶段网络异常一律静默（不该因为一次断网就在首页弹错误）。
+  /// **只读比对，绝不静默覆盖本地数据**：发现云端有一份「没见过」的备份时，
+  /// 把预览挂在 [pendingRemotePreview] 上由 UI 提示，是否恢复由用户决定；
+  /// 用户选「先用本机的」也会被持久化（[dismissPendingRemote]），不会每次
+  /// 启动都来问一遍。
+  ///
+  /// 先用 PROPFIND 看文件时间做廉价判断 —— 大多数启动到此就结束，不必下载
+  /// 整份备份。只有文件确实变过才下载并比对内容标识。
+  /// 配置类错误会写进 [lastSyncError] 让用户看见；纯网络抖动仍然静默。
   Future<void> checkRemote() async {
     if (kIsWeb || !syncConfig.autoSync || !syncConfig.isConfigured) return;
     try {
+      final mtime = await NutstoreSync.remoteModified(syncConfig);
+      if (mtime == null) return; // 云端还没有备份文件
+
+      // 文件没动过、且确定是我们自己写的 → 无事可做
+      if (!remoteIsOurs && mtime == lastSeenRemoteMtime) return;
+
       final f = await NutstoreSync.download(syncConfig);
       if (f == null) return;
       final preview = previewBackup(f.content);
       if (preview == null) return;
 
-      final remoteAt = preview.exportedAt == null
-          ? null
-          : DateTime.tryParse(preview.exportedAt!);
-      // 云端导出时间晚于本机上次同步时间 → 说明另一端有新改动
-      final remoteNewer = remoteAt != null &&
-          (lastSyncAt == null || remoteAt.isAfter(lastSyncAt!));
-      if (!remoteNewer) return;
+      // 内容就是我们上次同步过的那份 → 记下时间即可，不用打扰用户
+      final expo = preview.exportedAt;
+      if (expo != null && expo == lastSyncedExportedAt) {
+        lastSeenRemoteMtime = mtime;
+        remoteIsOurs = false;
+        _persistSyncSeen();
+        return;
+      }
 
+      lastSyncError = null;
       pendingRemotePreview = preview;
       _pendingRemoteText = f.content;
+      _pendingRemoteModified = mtime;
+      notifyListeners();
+    } on SyncException catch (e) {
+      // 配置类错误（密码错 / 路径错）必须让用户看见，
+      // 否则自动同步一直静默失败，用户还以为一切正常。
+      lastSyncError = e.message;
       notifyListeners();
     } catch (_) {
-      // 静默
+      // 网络类异常静默：不该因为一次断网就在首页弹错误
     }
   }
 
+  /// 用户选择「先用本机的」：把这次看到的远端版本记为已阅，
+  /// 否则下次启动还会拿同一份来问，用户会被训练成无脑点过。
   void dismissPendingRemote() {
+    if (_pendingRemoteModified != null) {
+      lastSeenRemoteMtime = _pendingRemoteModified;
+      remoteIsOurs = false;
+      _persistSyncSeen();
+    }
     pendingRemotePreview = null;
     _pendingRemoteText = null;
+    _pendingRemoteModified = null;
     notifyListeners();
   }
 
   /// 应用启动时挂起的云端备份
-  Future<RestoreResult> applyPendingRemote() async {
+  Future<RestoreResult> applyPendingRemote({bool allowCreditLoss = false}) async {
     final text = _pendingRemoteText;
     if (text == null) {
       return RestoreResult.fail('没有待恢复的云端备份');
     }
-    return applyRemote(text);
+    return applyRemote(text, allowCreditLoss: allowCreditLoss);
   }
 
   // ==================== 商品 CSV 导入 / 导出 ====================
@@ -1042,6 +1229,7 @@ class StoreService extends ChangeNotifier {
   void _persistLastBackup() => _save(_writeLastBackup);
   void _persistSyncConfig() => _save(_writeSyncConfig);
   void _persistSyncLast() => _save(_writeSyncLast);
+  void _persistSyncSeen() => _save(_writeSyncSeen);
 
   // 下面这组是真正的写入实现，失败会向上抛，供需要 `await` 的流程
   // （如恢复备份）使用，以便失败时回滚。
@@ -1121,14 +1309,33 @@ class StoreService extends ChangeNotifier {
     await prefs.setString(_kRestoreSnapshot, text);
   }
 
+  /// 「正在恢复」标记：置上之后如果进程被杀，下次启动 load() 会用快照回滚
+  Future<void> _writeRestoring(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kRestoring, value);
+  }
+
   Future<void> _writeSyncConfig() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kSyncConfig, jsonEncode(syncConfig.toJson()));
+    // Web 端不放凭据（同步在 Web 上本来就用不了，设置页也不提供填写入口）
+    await prefs.setString(
+        _kSyncConfig, jsonEncode(syncConfig.toJson(includeSecret: !kIsWeb)));
   }
 
   Future<void> _writeSyncLast() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kSyncLast, lastSyncAt?.toIso8601String() ?? '');
+  }
+
+  Future<void> _writeSyncSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _kSyncSeen,
+        jsonEncode({
+          'mtime': lastSeenRemoteMtime?.toIso8601String(),
+          'ours': remoteIsOurs,
+          'expo': lastSyncedExportedAt,
+        }));
   }
 }
 

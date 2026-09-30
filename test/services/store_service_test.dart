@@ -435,5 +435,35 @@ void main() {
       expect(r.ok, isTrue);
       expect(store.itemsOf('2026-07-01').single.brand, '农夫山泉');
     });
+
+    test('磁盘里 items 混入坏元素：load 不抛异常、也不会卡在启动页', () async {
+      // 旧实现里 DailyRecord.fromJson 用的是无保护的 `as Map`，
+      // 一条坏数据会让 load() 抛异常 → ready 永远为 false → App 卡在闪屏。
+      await loadStoreWith({
+        'sk_seeded': true,
+        'sk_sales': jsonEncode({
+          '2026-07-01': {
+            'date': '2026-07-01',
+            'items': [
+              '坏行',
+              {
+                'id': 'ok1',
+                'name': '正常行',
+                'quantity': 1,
+                'unitPrice': 2,
+                'totalPrice': 2,
+              },
+            ],
+          },
+        }),
+      });
+
+      final store = StoreService.instance;
+      expect(store.ready, isTrue, reason: 'ready 必须为 true，否则一直卡在启动页');
+      expect(store.loadError, isNull);
+      expect(store.itemsOf('2026-07-01').length, 1);
+      expect(store.itemsOf('2026-07-01').single.name, '正常行');
+      expect(store.droppedOnLoad, greaterThanOrEqualTo(1));
+    });
   });
 }

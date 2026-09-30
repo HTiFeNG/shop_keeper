@@ -52,11 +52,26 @@ abstract final class SearchIndex {
         initials = '';
       }
     }
-    final idx = _TextIndex(text.toLowerCase(), full, initials);
-    if (_cache.length >= _maxCache) _cache.clear();
+    // 原文与拼音都去掉空白：查询串是去空白归一化的（见 normalize），
+    // 索引侧不去就会出现「搜 500ml 找不到「可乐 500 ml」」这种不一致。
+    final idx = _TextIndex(
+      normalize(text),
+      full.replaceAll(RegExp(r'\s+'), ''),
+      initials.replaceAll(RegExp(r'\s+'), ''),
+    );
+    if (_cache.length >= _maxCache) {
+      // 只淘汰最旧的一部分。整体 clear() 会让下一次搜索把整张商品表的拼音
+      // 全部重算 —— 那正是这个缓存要避免的卡顿。
+      for (final k in _cache.keys.take(_maxCache ~/ 4).toList()) {
+        _cache.remove(k);
+      }
+    }
     _cache[text] = idx;
     return idx;
   }
+
+  /// 测试用：清空缓存（缓存是进程级静态状态，测试之间会互相影响）
+  static void resetCache() => _cache.clear();
 
   /// 相关度打分。0 = 不匹配，越大越靠前。
   ///
@@ -71,7 +86,7 @@ abstract final class SearchIndex {
     final q = normalize(query);
     if (q.isEmpty) return 1;
 
-    final n = name.toLowerCase();
+    final n = normalize(name);
     if (n == q) return 100;
     if (barcode.isNotEmpty && barcode.toLowerCase() == q) return 96;
     if (n.startsWith(q)) return 90;
@@ -85,7 +100,7 @@ abstract final class SearchIndex {
     if (ni.full.contains(q)) return 38;
 
     if (brand.isNotEmpty) {
-      final b = brand.toLowerCase();
+      final b = normalize(brand);
       if (b.startsWith(q)) return 30;
       if (b.contains(q)) return 26;
       final bi = _index(brand);
