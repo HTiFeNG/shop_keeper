@@ -438,7 +438,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
             child: Text(
               text,
               style: TextStyle(
-                  fontSize: 14, fontWeight: FontWeight.w600, color: color),
+                  fontSize: AppTheme.fontLabel, fontWeight: FontWeight.w600, color: color),
             ),
           ),
         ],
@@ -470,7 +470,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
                   '${negative ? '估算亏损约' : '估算毛利约'} '
                   '${formatCurrency(profit.abs())}',
                   style: TextStyle(
-                      fontSize: 15,
+                      fontSize: AppTheme.fontBody,
                       fontWeight: FontWeight.w600,
                       color: color),
                 ),
@@ -541,9 +541,9 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
     final fraction = maxRevenue > 0 ? rank.revenue / maxRevenue : 0.0;
     // 名次配色：原来第 1 名用 #FFB300，在白底上只有 1.79:1，数字几乎看不见
     final medalColor = switch (order) {
-      1 => const Color(0xFF8D5300),
-      2 => const Color(0xFF4E5A61),
-      3 => const Color(0xFF6B4A33),
+      1 => AppTheme.medalGold,
+      2 => AppTheme.medalSilver,
+      3 => AppTheme.medalBronze,
       _ => AppTheme.textSecondary,
     };
     return Row(
@@ -577,7 +577,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: AppTheme.fontLabel,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.textPrimary),
                     ),
@@ -585,7 +585,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
                   Text(
                     formatCurrency(rank.revenue),
                     style: const TextStyle(
-                        fontSize: 14,
+                        fontSize: AppTheme.fontLabel,
                         fontWeight: FontWeight.w700,
                         color: AppTheme.priceRed),
                   ),

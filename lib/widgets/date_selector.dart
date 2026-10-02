@@ -76,7 +76,7 @@ class DateSelector extends StatelessWidget {
           if (!_isToday)
             TextButton(
               onPressed: () => onChanged(du.todayKey()),
-              child: const Text('今天', style: TextStyle(fontSize: 15)),
+              child: const Text('今天', style: TextStyle(fontSize: AppTheme.fontBody)),
             ),
           IconButton(
             tooltip: '后一天',

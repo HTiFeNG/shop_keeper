@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../models/product.dart';
@@ -9,7 +8,9 @@ import '../services/export_service.dart';
 import '../services/store_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/csv_codec.dart';
+import '../utils/platform.dart';
 import '../utils/search.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/category_chips.dart';
 import '../widgets/category_name_dialog.dart';
 import '../widgets/category_picker_sheet.dart';
@@ -45,11 +46,9 @@ class _ProductManagePageState extends State<ProductManagePage> {
   bool _batchMode = false;
   final Set<String> _selectedIds = {};
 
-  /// 扫码仅 Android / iOS 显示（Web 隐藏）
-  bool get _canScan =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+  /// 扫码仅 Android / iOS 显示（Web / 桌面隐藏）。
+  /// 判断集中在 lib/utils/platform.dart，四个页面共用同一份。
+  bool get _canScan => canUseCameraScanner;
 
   @override
   void dispose() {
@@ -386,27 +385,13 @@ class _ProductManagePageState extends State<ProductManagePage> {
     }
   }
 
-  void _toast(String msg, {int seconds = 3}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-          SnackBar(content: Text(msg), duration: Duration(seconds: seconds)));
-  }
+  // 提示统一走 lib/widgets/app_snackbar.dart（三个页面共用一份实现），
+  // 这里保留同名薄包装，调用点不必改。
+  void _toast(String msg, {int seconds = 3}) =>
+      showToast(context, msg, seconds: seconds);
 
-  /// 失败提示：一句人话 + 更久停留 + 可重试（原来是把 $e 裸异常显示 2 秒）
-  void _toastErr(String msg, {Future<void> Function()? retry}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(msg),
-        duration: const Duration(seconds: 6),
-        action: retry == null
-            ? null
-            : SnackBarAction(label: '重试', onPressed: () => retry()),
-      ));
-  }
+  void _toastErr(String msg, {Future<void> Function()? retry}) =>
+      showToastErr(context, msg, retry: retry);
 
   // ==================== 批量操作 ====================
 
@@ -597,7 +582,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
           if (_batchMode)
             TextButton(
               onPressed: _exitBatchMode,
-              child: const Text('取消', style: TextStyle(fontSize: 14)),
+              child: const Text('取消', style: TextStyle(fontSize: AppTheme.fontLabel)),
             )
           else ...[
             PopupMenuButton<String>(
@@ -719,7 +704,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                 Text(
                   '已选 ${_selectedIds.length} 件',
                   style: const TextStyle(
-                      fontSize: 13,
+                      fontSize: AppTheme.fontCaption,
                       color: AppTheme.primary,
                       fontWeight: FontWeight.w600),
                 ),
@@ -745,7 +730,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                               ? '取消全选'
                               : '全选',
                           style: const TextStyle(
-                              fontSize: 14, color: AppTheme.primaryText),
+                              fontSize: AppTheme.fontLabel, color: AppTheme.primaryText),
                         ),
                       ],
                     ),
@@ -793,7 +778,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                         style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize: 14),
+                            fontSize: AppTheme.fontLabel),
                       ),
                       const Spacer(),
                       _barBtn(Icons.drive_file_move_outline, '移动分类',
@@ -809,7 +794,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                         style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize: 14),
+                            fontSize: AppTheme.fontLabel),
                       ),
                       const Spacer(),
                       _barBtn(Icons.ios_share, '导出', _export),

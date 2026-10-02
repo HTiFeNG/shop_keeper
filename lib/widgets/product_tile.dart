@@ -116,7 +116,7 @@ class ProductTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: AppTheme.fontSmall,
                       color:
                           has ? AppTheme.primaryText : AppTheme.textSecondary,
                     ),
@@ -178,7 +178,7 @@ class ProductTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w600),
+                                fontSize: AppTheme.fontBody, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
@@ -220,7 +220,7 @@ class ProductTile extends StatelessWidget {
                   Text(
                     '¥${fmtPrice(product.retailPrice)}',
                     style: const TextStyle(
-                      fontSize: 16,
+                      fontSize: AppTheme.fontCardTitle,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.priceRed,
                     ),

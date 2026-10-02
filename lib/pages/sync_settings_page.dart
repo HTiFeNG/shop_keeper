@@ -5,6 +5,7 @@ import '../services/nutstore_sync.dart';
 import '../services/store_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_utils.dart' as du;
+import '../widgets/app_snackbar.dart';
 import '../widgets/restore_confirm.dart';
 
 /// 坚果云同步设置。
@@ -192,26 +193,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
   // ==================== 提示 ====================
 
-  void _toast(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-          content: Text(msg), duration: const Duration(seconds: 5)));
-  }
+  // 提示统一走 lib/widgets/app_snackbar.dart（三个页面共用一份实现）。
+  // 时长比其余页面略长：这里的信息是一条完整的同步结果，需要读完。
+  void _toast(String msg) => showToast(context, msg, seconds: 5);
 
-  void _toastErr(String msg, {Future<void> Function()? retry}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(msg),
-        duration: const Duration(seconds: 7),
-        action: retry == null
-            ? null
-            : SnackBarAction(label: '重试', onPressed: () => retry()),
-      ));
-  }
+  void _toastErr(String msg, {Future<void> Function()? retry}) =>
+      showToastErr(context, msg, retry: retry, seconds: 7);
 
   // ==================== UI ====================
 
@@ -293,7 +280,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 child: Text(
                   err != null ? '上次同步失败' : '同步就绪',
                   style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600),
+                      fontSize: AppTheme.fontBody, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -369,7 +356,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   ),
                   child: Text('${i + 1}',
                       style: const TextStyle(
-                          fontSize: 11,
+                          fontSize: AppTheme.fontMicro,
                           fontWeight: FontWeight.w700,
                           color: AppTheme.primaryText)),
                 ),
@@ -442,7 +429,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               value: c.autoSync,
               activeThumbColor: AppTheme.primary,
               title: const Text('启动时检查云端更新',
-                  style: TextStyle(fontSize: 15)),
+                  style: TextStyle(fontSize: AppTheme.fontBody)),
               subtitle: const Text('只提示、不自动覆盖本机数据',
                   style: AppTheme.caption),
               onChanged: (v) => _update(c.copyWith(autoSync: v)),
@@ -481,14 +468,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
             ),
             onPressed: (_busy != null || !configured) ? null : _test,
             icon: const Icon(Icons.wifi_tethering, size: 20),
-            label: const Text('测试连接', style: TextStyle(fontSize: 15)),
+            label: const Text('测试连接', style: TextStyle(fontSize: AppTheme.fontBody)),
           ),
           const SizedBox(height: 10),
           FilledButton.icon(
             onPressed: (_busy != null || !configured) ? null : _upload,
             icon: const Icon(Icons.cloud_upload_outlined, size: 20),
             label: const Text('上传到云端（本机 → 云端）',
-                style: TextStyle(fontSize: 15)),
+                style: TextStyle(fontSize: AppTheme.fontBody)),
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
@@ -500,7 +487,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
             onPressed: (_busy != null || !configured) ? null : _download,
             icon: const Icon(Icons.cloud_download_outlined, size: 20),
             label: const Text('从云端恢复（云端 → 本机）',
-                style: TextStyle(fontSize: 15)),
+                style: TextStyle(fontSize: AppTheme.fontBody)),
           ),
           if (!configured) ...[
             const SizedBox(height: 8),

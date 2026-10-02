@@ -1,8 +1,10 @@
-import 'package:flutter/foundation.dart'
-    show kIsWeb, kDebugMode, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+
+import '../theme/app_theme.dart';
+import '../utils/platform.dart';
 
 /// 扫码页（全屏）。
 ///
@@ -26,10 +28,9 @@ class _ScanPageState extends State<ScanPage> {
   @override
   void initState() {
     super.initState();
-    // 仅在移动端启用摄像头扫码；PC / Web 提示需手机使用
-    _supported = !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS);
+    // 仅在移动端启用摄像头扫码；PC / Web 提示需手机使用。
+    // 判断集中在 lib/utils/platform.dart（与各页面的扫码入口共用一份）。
+    _supported = canUseCameraScanner;
     if (_supported) {
       _controller = MobileScannerController(
         autoStart: true,
@@ -93,13 +94,13 @@ class _ScanPageState extends State<ScanPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.phone_android, size: 64, color: Colors.grey.shade500),
+          Icon(Icons.phone_android, size: 64, color: AppTheme.onDarkHint),
           const SizedBox(height: 16),
           const Text('扫码功能需要使用手机摄像头',
-              style: TextStyle(color: Colors.white, fontSize: 16)),
+              style: TextStyle(color: Colors.white, fontSize: AppTheme.fontCardTitle)),
           const SizedBox(height: 8),
           Text('请在手机上打开本应用使用扫码',
-              style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+              style: TextStyle(color: AppTheme.onDarkHint, fontSize: AppTheme.fontCaption)),
         ],
       ),
     );
@@ -146,7 +147,7 @@ class _ScanPageState extends State<ScanPage> {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: const Text('将条码对准框内，自动识别',
-                    style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    style: TextStyle(color: Colors.white70, fontSize: AppTheme.fontCaption)),
               ),
             ],
           ),
@@ -181,7 +182,7 @@ class _ScanPageState extends State<ScanPage> {
             const SizedBox(height: 16),
             Text(message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 14)),
+                style: const TextStyle(color: Colors.white, fontSize: AppTheme.fontLabel)),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(foregroundColor: Colors.white),

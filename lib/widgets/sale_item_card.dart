@@ -295,7 +295,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
                     FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                   ],
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: AppTheme.fontSectionTitle,
                     fontWeight: FontWeight.w700,
                     color: it.isManualMode
                         ? AppTheme.priceRed

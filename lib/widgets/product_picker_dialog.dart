@@ -185,7 +185,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
                 SizedBox(width: 4),
                 Text('常用商品',
                     style: TextStyle(
-                        fontSize: 13,
+                        fontSize: AppTheme.fontCaption,
                         fontWeight: FontWeight.w600,
                         color: AppTheme.textSecondary)),
               ],
@@ -296,7 +296,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
               Text(
                 '¥${fmtPrice(p.retailPrice)}',
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: AppTheme.fontCardTitle,
                   fontWeight: FontWeight.bold,
                   color: AppTheme.priceRed,
                 ),

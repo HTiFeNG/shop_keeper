@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../models/product.dart';
@@ -11,6 +9,8 @@ import '../services/store_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_utils.dart' as du;
 import '../utils/format.dart';
+import '../utils/platform.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/date_selector.dart';
 import '../widgets/favorite_quick_bar.dart';
 import '../widgets/product_picker_dialog.dart';
@@ -55,11 +55,8 @@ class _SalesPageState extends State<SalesPage>
   /// 这里在回到前台时重新对表；用户手动翻到别的日期后不再自动跟随。
   bool _followToday = true;
 
-  /// 扫码按钮只在手机端显示（Web 无摄像头）
-  bool get _canScan =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+  /// 扫码按钮只在手机端显示（判断集中在 lib/utils/platform.dart）
+  bool get _canScan => canUseCameraScanner;
 
   /// 删除行「已删除」SnackBar 的兜底关闭定时器（部分机型带 action 时不自动消失）
   Timer? _snackTimer;
@@ -124,6 +121,13 @@ class _SalesPageState extends State<SalesPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 从后台回到前台是对表的关键时机（跨零点）
     if (state == AppLifecycleState.resumed) _syncToday();
+    // 离开前台时，把还在落盘合并窗口里的改动立刻写掉：
+    // 输入框的最后一两个字可能还没落到磁盘，别等进程被系统回收才后悔。
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      store.flushPendingSaves();
+    }
   }
 
   /// 仍在「跟随今天」且日期已变 → 自动切到新的一天
@@ -151,7 +155,7 @@ class _SalesPageState extends State<SalesPage>
               store.markSeeded();
               Navigator.pop(ctx);
             },
-            child: const Text('从空开始', style: TextStyle(fontSize: 15)),
+            child: const Text('从空开始', style: TextStyle(fontSize: AppTheme.fontBody)),
           ),
           FilledButton(
             onPressed: () {
@@ -159,7 +163,7 @@ class _SalesPageState extends State<SalesPage>
               Navigator.pop(ctx);
               _toast('已载入示例商品，去「商品」页看看吧');
             },
-            child: const Text('载入示例数据', style: TextStyle(fontSize: 15)),
+            child: const Text('载入示例数据', style: TextStyle(fontSize: AppTheme.fontBody)),
           ),
         ],
       ),
@@ -231,8 +235,13 @@ class _SalesPageState extends State<SalesPage>
     unawaited(_scrollToRow(item.id));
   }
 
+  /// 明细行改动的统一入口（名称 / 数量 / 单价 / 总价 / 计价方式都走这里）。
+  ///
+  /// 传 deferSave 让**磁盘写入**进合并窗口：输入框每敲一个字都会到这里，
+  /// 而落盘是全量序列化整个 sales，明细上百条时会明显发涩。内存与界面仍是即时的。
+  /// 其余入口（新增行 / 点一下记一笔 / 撤销删除）不传，保持立即落盘。
   void _updateItem(SaleItem item) {
-    store.upsertSaleItem(_date, item);
+    store.upsertSaleItem(_date, item, deferSave: true);
   }
 
   /// 删除一行 + 5 秒撤销（带兜底定时关闭，防止部分机型不自动消失）
@@ -375,30 +384,12 @@ class _SalesPageState extends State<SalesPage>
     }
   }
 
-  /// 普通提示
-  void _toast(String msg) {    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-          SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
-  }
+  // 提示统一走 lib/widgets/app_snackbar.dart（三个页面共用一份实现），
+  // 这里保留同名薄包装，调用点不必改。
+  void _toast(String msg) => showToast(context, msg);
 
-  /// 失败提示：一句人话 + 停留更久 + 可重试。
-  ///
-  /// 旧实现把 `'导出失败：$e'` 这样的裸异常丢给用户看 2 秒 —— 对中老年店主
-  /// 既读不懂也来不及看，而且没有任何补救入口。
-  void _toastErr(String msg, {Future<void> Function()? retry}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(msg),
-        duration: const Duration(seconds: 6),
-        action: retry == null
-            ? null
-            : SnackBarAction(label: '重试', onPressed: () => retry()),
-      ));
-  }
+  void _toastErr(String msg, {Future<void> Function()? retry}) =>
+      showToastErr(context, msg, retry: retry);
 
   // ==================== UI ====================
 
@@ -473,7 +464,7 @@ class _SalesPageState extends State<SalesPage>
           labelColor: AppTheme.primary,
           unselectedLabelColor: AppTheme.textSecondary,
           indicatorColor: AppTheme.primary,
-          labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          labelStyle: const TextStyle(fontSize: AppTheme.fontBody, fontWeight: FontWeight.w600),
           tabs: const [
             Tab(text: '明细记录'),
             Tab(text: '月度统计'),
@@ -582,7 +573,7 @@ class _SalesPageState extends State<SalesPage>
                         onPressed: _addFromLibrary,
                         icon: const Icon(Icons.add),
                         label: const Text('添加商品',
-                            style: TextStyle(fontSize: 16)),
+                            style: TextStyle(fontSize: AppTheme.fontCardTitle)),
                       ),
                     ),
                     if (_canScan) ...[
@@ -612,7 +603,7 @@ class _SalesPageState extends State<SalesPage>
                         onPressed: _addManualRow,
                         icon: const Icon(Icons.edit_note, size: 20),
                         label: const Text('手动输入',
-                            style: TextStyle(fontSize: 15)),
+                            style: TextStyle(fontSize: AppTheme.fontBody)),
                       ),
                     ),
                   ],
@@ -791,12 +782,12 @@ class _SalesPageState extends State<SalesPage>
                 Text('${du.dayLabel(_date)} 合计',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, color: Colors.white)),
+                    style: const TextStyle(fontSize: AppTheme.fontLabel, color: Colors.white)),
                 const SizedBox(height: 2),
                 Text('$kinds 种 · $qty 件',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, color: Colors.white)),
+                    style: const TextStyle(fontSize: AppTheme.fontCaption, color: Colors.white)),
               ],
             ),
           ),
@@ -809,7 +800,7 @@ class _SalesPageState extends State<SalesPage>
               child: Text(
                 formatCurrency(total),
                 style: const TextStyle(
-                  fontSize: 28,
+                  fontSize: AppTheme.fontAmountLarge,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),
@@ -834,7 +825,7 @@ class _SalesPageState extends State<SalesPage>
           Text(
             du.dateKey(DateTime.now()) == _date ? '今天还没记账' : '这一天没有记录',
             style: const TextStyle(
-                fontSize: 16,
+                fontSize: AppTheme.fontCardTitle,
                 fontWeight: FontWeight.w600,
                 color: AppTheme.textPrimary),
           ),

@@ -46,7 +46,7 @@ class _CreditPageState extends State<CreditPage> {
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
-        label: const Text('记一笔欠账', style: TextStyle(fontSize: 15)),
+        label: const Text('记一笔欠账', style: TextStyle(fontSize: AppTheme.fontBody)),
       ),
       body: ListenableBuilder(
         listenable: store,
@@ -87,7 +87,7 @@ class _CreditPageState extends State<CreditPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('还没收回来的钱',
-              style: TextStyle(fontSize: 14, color: Colors.white)),
+              style: TextStyle(fontSize: AppTheme.fontLabel, color: Colors.white)),
           const SizedBox(height: 4),
           FittedBox(
             fit: BoxFit.scaleDown,
@@ -95,7 +95,7 @@ class _CreditPageState extends State<CreditPage> {
             child: Text(
               formatCurrency(total),
               style: const TextStyle(
-                fontSize: 30,
+                fontSize: AppTheme.fontAmountLarge,
                 fontWeight: FontWeight.w700,
                 color: Colors.white,
               ),
@@ -103,7 +103,7 @@ class _CreditPageState extends State<CreditPage> {
           ),
           const SizedBox(height: 4),
           Text('$count 笔 · 涉及 $people 人',
-              style: const TextStyle(fontSize: 13, color: Colors.white)),
+              style: const TextStyle(fontSize: AppTheme.fontCaption, color: Colors.white)),
         ],
       ),
     );
@@ -183,7 +183,7 @@ class _CreditPageState extends State<CreditPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600),
+                              fontSize: AppTheme.fontCardTitle, fontWeight: FontWeight.w600),
                         ),
                       ),
                       if (c.settled) ...[
@@ -220,7 +220,7 @@ class _CreditPageState extends State<CreditPage> {
                 Text(
                   '¥${fmtPrice(c.amount)}',
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: AppTheme.fontSectionTitle,
                     fontWeight: FontWeight.bold,
                     color: c.settled ? AppTheme.success : AppTheme.priceRed,
                   ),
@@ -291,11 +291,11 @@ class _CreditPageState extends State<CreditPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
+                        fontSize: AppTheme.fontCardTitle, fontWeight: FontWeight.w600)),
               ),
               Text('¥${fmtPrice(g.total)}',
                   style: const TextStyle(
-                      fontSize: 17,
+                      fontSize: AppTheme.fontSectionTitle,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.priceRed)),
             ],
@@ -328,7 +328,7 @@ class _CreditPageState extends State<CreditPage> {
                     ),
                     Text('¥${fmtPrice(c.amount)}',
                         style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w600)),
+                            fontSize: AppTheme.fontBody, fontWeight: FontWeight.w600)),
                     const SizedBox(width: 6),
                     TextButton(
                       onPressed: () => _confirmSettle(c),
@@ -602,7 +602,7 @@ class _CreditEditorState extends State<_CreditEditor> {
                 FilledButton(
                   onPressed: _submit,
                   child: Text(widget.editing == null ? '记下来' : '保存',
-                      style: const TextStyle(fontSize: 16)),
+                      style: const TextStyle(fontSize: AppTheme.fontCardTitle)),
                 ),
               ],
             ),

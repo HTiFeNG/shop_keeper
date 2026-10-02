@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -68,6 +69,30 @@ class StoreService extends ChangeNotifier {
   /// 再次分配给新商品，而历史销售里指向它的 productId 仍然有效 → 老账会
   /// 静默改指到另一个商品（月度排行被合并、毛利按新商品进价重算）。
   int _nextSeq = 1;
+
+  /// 销售记录落盘的合并窗口时长（见 [_persistSales]）。
+  static const Duration _kSalesSaveWindow = Duration(milliseconds: 400);
+
+  /// 合并窗口的定时器；null 表示当前没有待写入的改动。
+  Timer? _salesSaveTimer;
+
+  /// 商品 id → 商品 的索引，供 [findById] / [brandOf] 做 O(1) 命中。
+  ///
+  /// 营业额明细每一行都要取品牌（`brandOf` → `findById`），逐行线性扫商品表
+  /// 就是「行数 × 商品数」，而这段是在 build 里跑的。索引由 [_persistProducts]
+  /// 统一作废重建 —— 那是所有商品变更的唯一出口。
+  Map<String, Product>? _productIndex;
+
+  Map<String, Product> get _index =>
+      _productIndex ??= {for (final p in products) p.id: p};
+
+  /// 「最近常卖」的缓存（[_recentCacheDay] 记录它是哪一天算的）。
+  ///
+  /// 这个列表完全由销售历史 + 商品库推导，却是被 build 直接调用的 ——
+  /// 不做缓存的话，编辑任意一行都要重新遍历整份销售历史。
+  /// 任何销售 / 商品变更都会把它置空（见 [_persistSales] / [_persistProducts]）。
+  List<Product>? _recentCache;
+  String _recentCacheDay = '';
 
   /// 最近一次保存失败的原因（null = 一切正常）。UI 据此提示用户尽快备份。
   String? saveError;
@@ -319,6 +344,11 @@ class StoreService extends ChangeNotifier {
     }
 
     ready = true;
+
+    // 数据整体换过 → 派生缓存一律作废（商品索引 / 最近常卖）
+    _productIndex = null;
+    _recentCache = null;
+
     notifyListeners();
   }
 
@@ -377,13 +407,10 @@ class StoreService extends ChangeNotifier {
     return null;
   }
 
-  /// 根据 id 查找商品（统计聚合、扫码定位用）
-  Product? findById(String id) {
-    for (final p in products) {
-      if (p.id == id) return p;
-    }
-    return null;
-  }
+  /// 根据 id 查找商品（统计聚合、明细行取品牌、扫码定位用）。
+  ///
+  /// 走 [_index] 而不是线性扫描：明细行逐行取品牌时，线性扫是「行数 × 商品数」。
+  Product? findById(String id) => _index[id];
 
   /// 明细行要显示的品牌。
   ///
@@ -518,6 +545,12 @@ class StoreService extends ChangeNotifier {
   /// 完全由销售历史推导，不依赖手工加星 —— 新用户装上就能用上一键记账，
   /// 而不必先知道「要进编辑页把商品点亮」。
   List<Product> recentProducts({int limit = 8, int days = 30}) {
+    final todayKey = du.todayKey();
+    // 缓存命中（当天算过、且期间销售/商品没变过）直接切片返回
+    final cached = _recentCache;
+    if (cached != null && _recentCacheDay == todayKey) {
+      return cached.take(limit).toList();
+    }
     final sinceKey =
         du.dateKey(DateTime.now().subtract(Duration(days: days)));
     final qty = <String, int>{};
@@ -536,6 +569,8 @@ class StoreService extends ChangeNotifier {
         // 销量相同的商品顺序否则每次都会变。
         return byQty != 0 ? byQty : a.id.compareTo(b.id);
       });
+    _recentCache = list;
+    _recentCacheDay = todayKey;
     return list.take(limit).toList();
   }
 
@@ -666,7 +701,11 @@ class StoreService extends ChangeNotifier {
   /// 新增 / 更新一行销售明细。
   ///
   /// 库存联动已随「库存功能」一并移除：本应用只记营业额，不跟踪库存。
-  void upsertSaleItem(String date, SaleItem newItem) {
+  ///
+  /// [deferSave] 供输入框使用：每敲一个字都会走到这里，传 true 让磁盘写入走
+  /// 合并窗口（内存与 UI 仍是即时的），明细多时才不会打字发涩。
+  /// 详见 [_persistSales]。
+  void upsertSaleItem(String date, SaleItem newItem, {bool deferSave = false}) {
     final record = sales.putIfAbsent(date, () => DailyRecord(date: date));
     final idx = record.items.indexWhere((e) => e.id == newItem.id);
     if (idx >= 0) {
@@ -674,7 +713,7 @@ class StoreService extends ChangeNotifier {
     } else {
       record.items.add(newItem);
     }
-    _persistSales();
+    _persistSales(coalesce: deferSave);
     notifyListeners();
   }
 
@@ -1012,6 +1051,10 @@ class StoreService extends ChangeNotifier {
     _syncSeq();
     hasRestoreSnapshot = true;
 
+    // 内存里的商品 / 销售整体换过了 → 派生缓存立即作废（成功与回滚路径都要）
+    _productIndex = null;
+    _recentCache = null;
+
     // ---- 阶段三：落盘；失败则**内存 + 磁盘一起回滚** ----
     try {
       await _writeAll();
@@ -1314,10 +1357,53 @@ class StoreService extends ChangeNotifier {
     });
   }
 
+  /// 把还在合并窗口里的改动立即写盘。
+  ///
+  /// App 退到后台 / 即将退出时调用，避免「用户刚打完最后一个字就切走、
+  /// 进程随后被杀」这一小段时间窗内的改动丢失。
+  void flushPendingSaves() {
+    final t = _salesSaveTimer;
+    if (t == null) return;
+    t.cancel();
+    _salesSaveTimer = null;
+    _save(_writeSales);
+  }
+
   // 下面这组 `_persist*` 供各变更路径「发射后不管」地调用（自带失败捕获）。
-  void _persistProducts() => _save(_writeProducts);
+  void _persistProducts() {
+    _productIndex = null; // 商品库变了 → id 索引与「最近常卖」缓存一并作废
+    _recentCache = null;
+    _save(_writeProducts);
+  }
+
   void _persistCategories() => _save(_writeCategories);
-  void _persistSales() => _save(_writeSales);
+
+  /// 销售记录的落盘入口。
+  ///
+  /// [coalesce] = true 时**只把磁盘写入**合并到一个短窗口内（内存与 UI 通知
+  /// 仍是即时的，所以打字看不到延迟）。
+  ///
+  /// 为什么需要：名称 / 单价 / 数量输入框每敲一个字都会走 [upsertSaleItem]，
+  /// 而 [_writeSales] 是「jsonEncode 整个 sales」+ 写盘 —— 明细上百条时，
+  /// 每次按键都做一遍全量序列化，输入明显发涩。
+  ///
+  /// 代价：窗口期内的改动若进程被杀会丢。因此**只有输入路径**传 coalesce，
+  /// 其余（新增行 / 删除 / 点一下记一笔 / 恢复备份 / 结算欠账）一律立即落盘。
+  void _persistSales({bool coalesce = false}) {
+    _recentCache = null; // 销售历史变了 → 「最近常卖」要重算
+    if (!coalesce) {
+      _salesSaveTimer?.cancel();
+      _salesSaveTimer = null;
+      _save(_writeSales);
+      return;
+    }
+    _salesSaveTimer?.cancel();
+    _salesSaveTimer = Timer(_kSalesSaveWindow, () {
+      _salesSaveTimer = null;
+      _save(_writeSales);
+    });
+  }
+
   void _persistCredits() => _save(_writeCredits);
   void _persistSeeded() => _save(_writeSeeded);
   void _persistNextSeq() => _save(_writeNextSeq);

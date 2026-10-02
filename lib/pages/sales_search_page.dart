@@ -269,7 +269,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                 Text(
                   '${du.dayLabel(_start)} – ${du.dayLabel(_end)}',
                   style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600),
+                      fontSize: AppTheme.fontLabel, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 2),
                 Text('命中 $items 条明细 · $days 天有记录', style: AppTheme.caption),
@@ -283,7 +283,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
               style: const TextStyle(
-                  fontSize: 20,
+                  fontSize: AppTheme.fontStatValue,
                   fontWeight: FontWeight.w700,
                   color: AppTheme.priceRed),
             ),
@@ -323,7 +323,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 14,
+                            fontSize: AppTheme.fontLabel,
                             fontWeight: FontWeight.w600,
                             color: AppTheme.primaryText)),
                   ),
@@ -363,7 +363,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    fontSize: 15, fontWeight: FontWeight.w600),
+                                    fontSize: AppTheme.fontBody, fontWeight: FontWeight.w600),
                               ),
                             ),
                             // 品牌按内容取宽（上限 96dp），名称用 Expanded 吃掉
@@ -391,7 +391,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                   Text(
                     '¥${fmtPrice(it.totalPrice)}',
                     style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: AppTheme.fontBody,
                         fontWeight: FontWeight.w700,
                         color: AppTheme.priceRed),
                   ),

@@ -74,7 +74,29 @@ abstract final class AppTheme {
   /// 警示黄底（缺进价提示条）
   static const Color warningSurface = Color(0xFFFFFDE7);
 
+  // ==================== 深色底（扫码页）====================
+
+  /// 深色底上的弱提示文字 / 图标。
+  ///
+  /// 扫码页整页黑底，上面那些浅色主题的文字常量在它里面不能用；而「灰色」
+  /// 本身没有语义（到底是「次要」还是「禁用」？），收成一个具名常量。
+  /// 对应散落前的 `Colors.grey.shade400` / `.shade500`。
+  static const Color onDarkHint = Color(0xFFBDBDBD);
+
+  // ==================== 排行榜奖牌色 ====================
+
+  /// 商品排行前三名的名次色（金 / 银 / 铜）。
+  ///
+  /// 这三个是自定值，之前直接写在 monthly_stats_page 里，收进来以便统一调色。
+  static const Color medalGold = Color(0xFF8D5300);
+  static const Color medalSilver = Color(0xFF4E5A61);
+  static const Color medalBronze = Color(0xFF6B4A33);
+
   // ==================== 字号 ====================
+  //
+  // 全 App 的字号只有这里一处定义，页面里**不要再写字面量**。
+  // 历史遗留：散落过 11/12/14/16/20/28/30 共七种值，同一层级的文字在不同
+  // 页面大小不一。下面每个值对应一个明确用途，新增界面时挑一个复用。
 
   /// 页标题
   static const double fontPageTitle = 22;
@@ -87,14 +109,33 @@ abstract final class AppTheme {
   /// 字号由 [AppBarTheme] 统一给。
   static const double fontAppBarTitle = 20;
 
+  /// 统计数值（四宫格 / 汇总条里的数字）
+  static const double fontStatValue = 20;
+
   /// 区块标题
   static const double fontSectionTitle = 17;
 
-  /// 正文
+  /// 卡片 / 明细行标题
+  static const double fontCardTitle = 16;
+
+  /// 正文与按钮文字
   static const double fontBody = 15;
+
+  /// 次要标签（行内小标签、对话框动作按钮）
+  static const double fontLabel = 14;
 
   /// 辅助文字（原为 12，对中老年用户偏小；代码里散落的 10/11px 一律并入这里）
   static const double fontCaption = 13;
+
+  /// 更小的补充说明。
+  ///
+  /// ⚠️ 低于本类约定的 13px 下限，仅用于扫码页这类深色底上的次要文字 ——
+  /// 新增界面不要用它，请直接用 [fontCaption]。
+  static const double fontSmall = 12;
+  static const double fontMicro = 11;
+
+  /// 卡片主金额大字（日合计 / 欠账未收回总额）
+  static const double fontAmountLarge = 28;
 
   /// 日合计大字
   static const double fontBigTotal = 32;
@@ -210,19 +251,19 @@ abstract final class AppTheme {
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return const TextStyle(
-              fontSize: 12,
+              fontSize: fontSmall,
               fontWeight: FontWeight.w600,
               color: primaryText,
             );
           }
-          return const TextStyle(fontSize: 12, color: textSecondary);
+          return const TextStyle(fontSize: fontSmall, color: textSecondary);
         }),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: primary,
           minimumSize: const Size(0, 48),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(fontSize: fontBody, fontWeight: FontWeight.w600),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(radiusSmall),
           ),

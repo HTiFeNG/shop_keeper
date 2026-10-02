@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,6 +5,7 @@ import '../models/product.dart';
 import '../services/store_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/platform.dart';
 import '../widgets/scan_page.dart';
 
 /// 商品编辑页 —— 新增 / 编辑共用。
@@ -32,11 +32,8 @@ class _ProductEditPageState extends State<ProductEditPage> {
   /// 类别：新商品默认不选（null）
   String? _category;
 
-  /// 扫码仅 Android / iOS 显示
-  bool get _canScan =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+  /// 扫码仅 Android / iOS 显示（判断集中在 lib/utils/platform.dart）
+  bool get _canScan => canUseCameraScanner;
 
   @override
   void initState() {
@@ -234,7 +231,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
             ),
           TextButton(
             onPressed: _save,
-            child: const Text('保存', style: TextStyle(fontSize: 16)),
+            child: const Text('保存', style: TextStyle(fontSize: AppTheme.fontCardTitle)),
           ),
           const SizedBox(width: 8),
         ],
@@ -345,7 +342,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
           size: 28,
         ),
         title: const Text('常用商品（星标）',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            style: TextStyle(fontSize: AppTheme.fontBody, fontWeight: FontWeight.w600)),
         subtitle: const Text('点亮后记账时优先展示，首页可一键添加',
             style: TextStyle(fontSize: AppTheme.fontCaption)),
         trailing: Switch(
@@ -419,7 +416,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
           text: TextSpan(
             text: text,
             style: const TextStyle(
-                fontSize: 14,
+                fontSize: AppTheme.fontLabel,
                 color: AppTheme.textSecondary,
                 fontWeight: FontWeight.w500),
             children: required
@@ -437,11 +434,11 @@ class _ProductEditPageState extends State<ProductEditPage> {
         children: [
           Text(label,
               style:
-                  const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+                  const TextStyle(fontSize: AppTheme.fontLabel, color: AppTheme.textSecondary)),
           const Spacer(),
           Text(value,
               style:
-                  const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+                  const TextStyle(fontSize: AppTheme.fontLabel, color: AppTheme.textSecondary)),
         ],
       );
 
