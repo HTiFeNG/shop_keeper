@@ -164,12 +164,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       setState(() => _busy = '正在恢复…');
       var r = await store.applyRemote(file.content);
       if (!mounted) return;
-      // v2 老备份不含欠账：默认拒绝，问过用户再带 allowCreditLoss 重来
-      if (r.needsCreditConfirm) {
+      // 备份缺少本机现有的数据（欠账 / 营业额）：默认拒绝，问过用户再重来
+      if (r.needsConfirm) {
         setState(() => _busy = null);
-        if (!await confirmCreditLoss(context, r)) return;
+        if (!await confirmRestoreLoss(context, r)) return;
         setState(() => _busy = '正在恢复…');
-        r = await store.applyRemote(file.content, allowCreditLoss: true);
+        r = await store.applyRemote(file.content, allowDataLoss: true);
         if (!mounted) return;
       }
       setState(() => _busy = null);

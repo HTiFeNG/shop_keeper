@@ -25,6 +25,9 @@ abstract final class ExportService {
   static Future<void> exportProducts(String csv) => impl.exportProducts(csv);
 
   /// 导出备份 JSON 文件。
-  static Future<void> exportBackup(String jsonText) =>
+  ///
+  /// 返回 true 表示文件已交出（分享成功 / 已触发浏览器下载）；
+  /// **false 表示用户在分享面板里取消了**，调用方不应记成「已备份」。
+  static Future<bool> exportBackup(String jsonText) =>
       impl.exportBackup(jsonText);
 }

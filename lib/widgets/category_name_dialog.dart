@@ -15,9 +15,9 @@ Future<String?> showCategoryNameDialog(
   String initial = '',
   String? oldName,
   List<String> existing = const [],
-}) {
+}) async {
   final ctrl = TextEditingController(text: initial);
-  return showDialog<String>(
+  final result = await showDialog<String>(
     context: context,
     builder: (ctx) {
       String? error;
@@ -69,4 +69,9 @@ Future<String?> showCategoryNameDialog(
       );
     },
   );
+  // 对话框关闭后还有一小段退出动画在跑，此时立刻 dispose 会让 TextField
+  // 用到已释放的 controller，所以等动画放完再释放。
+  // （此前是根本不释放 —— 每次新建 / 改名分类都会漏一个 controller。）
+  Future<void>.delayed(const Duration(milliseconds: 400), ctrl.dispose);
+  return result;
 }

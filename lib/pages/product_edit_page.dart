@@ -246,7 +246,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
           children: [
             _card(children: [
               _readonlyRow('编号',
-                  isEdit ? widget.product!.id : '${store.nextId()}（自动生成）'),
+                  isEdit ? widget.product!.id : '${store.peekNextId()}（自动生成）'),
             ]),
             const SizedBox(height: 12),
             _card(children: [

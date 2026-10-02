@@ -284,7 +284,15 @@ class _SalesPageState extends State<SalesPage>
 
   Future<void> _exportBackup() async {
     try {
-      await ExportService.exportBackup(store.exportBackup());
+      final handedOff =
+          await ExportService.exportBackup(store.exportBackup());
+      if (!handedOff) {
+        // 用户在分享面板里取消了：不能记成「已备份」，否则「N 天没备份」的
+        // 提醒会消失，而用户手上其实没有文件。
+        _toastErr('备份没有保存。请重试，并在分享面板里选「保存到文件」',
+            retry: _exportBackup);
+        return;
+      }
       store.markBackedUp();
       _toast('备份已导出，请把这个文件保存好');
     } catch (_) {
@@ -354,10 +362,10 @@ class _SalesPageState extends State<SalesPage>
     }
     var r = await store.applyPendingRemote();
     if (!mounted) return;
-    // v2 老备份不含欠账：默认拒绝，问过用户再带 allowCreditLoss 重来
-    if (r.needsCreditConfirm) {
-      if (!await confirmCreditLoss(context, r)) return;
-      r = await store.applyPendingRemote(allowCreditLoss: true);
+    // 备份缺少本机现有的数据（欠账 / 营业额）：默认拒绝，问过用户再重来
+    if (r.needsConfirm) {
+      if (!await confirmRestoreLoss(context, r)) return;
+      r = await store.applyPendingRemote(allowDataLoss: true);
       if (!mounted) return;
     }
     if (r.ok) {
@@ -483,7 +491,13 @@ class _SalesPageState extends State<SalesPage>
               MonthlyStatsPage(
                 initialMonth: du.monthKey(du.parseDateKey(_date)),
                 onJumpToDate: (date) {
-                  setState(() => _date = date);
+                  // 与 _changeDate / _openSearch 保持一致：跳到历史日期后必须
+                  // 退出「跟随今天」，否则下一次 _syncToday()（回到前台、定时器
+                  // 触发）会把日期悄悄拉回今天，用户丢失所在位置。
+                  setState(() {
+                    _date = date;
+                    _followToday = date == du.todayKey();
+                  });
                   _tabCtrl.animateTo(0);
                 },
               ),

@@ -121,12 +121,18 @@ Future<void> exportProducts(String csv) async {
 }
 
 /// 导出备份 JSON。
-Future<void> exportBackup(String jsonText) async {
+///
+/// 返回 true 表示文件确实交给了分享目标；**用户在选择面板里取消时返回 false**
+/// —— 调用方据此决定要不要记成「已备份」。旧实现不区分这两种情况，用户取消后
+/// 界面照样说「备份已导出」，「N 天没备份」的提醒随之消失，而用户手上其实
+/// 没有文件（临时目录还会被系统清理）。
+Future<bool> exportBackup(String jsonText) async {
   final dir = await getTemporaryDirectory();
   final file = File('${dir.path}/店铺管家备份_${_stamp()}.json');
   await file.writeAsString(jsonText, flush: true);
-  await SharePlus.instance.share(ShareParams(
+  final r = await SharePlus.instance.share(ShareParams(
     files: [XFile(file.path)],
     title: '数据备份',
   ));
+  return r.status != ShareResultStatus.dismissed;
 }

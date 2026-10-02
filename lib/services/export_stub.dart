@@ -15,6 +15,6 @@ Future<void> exportProducts(String csv) async {
   throw UnsupportedError('当前平台不支持导出');
 }
 
-Future<void> exportBackup(String jsonText) async {
+Future<bool> exportBackup(String jsonText) async {
   throw UnsupportedError('当前平台不支持导出');
 }

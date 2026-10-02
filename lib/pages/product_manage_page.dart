@@ -168,7 +168,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
     if (_selectedCategory != kCategoryAll &&
         _selectedCategory != kCategoryNone) {
       if (!store.categories.contains(_selectedCategory)) {
-        setState(() => _selectedCategory = kCategoryAll);
+        _setCategory(kCategoryAll);
       }
     }
   }
@@ -178,7 +178,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
     final ok = store.renameCategory(oldName, newName);
     // 改名时如果正停在这个分类上，跟着切过去，否则筛选结果会瞬间变空
     if (ok && _selectedCategory == oldName) {
-      setState(() => _selectedCategory = newName);
+      _setCategory(newName);
     }
     return ok;
   }
@@ -210,7 +210,11 @@ class _ProductManagePageState extends State<ProductManagePage> {
         type: FileType.any,
         withData: true,
       );
-      final bytes = result?.files.single.bytes;
+      // 用 first 而不是 single：多选 / 空选时 single 会抛异常，
+      // 而这里被 catch 成「文件读不出来」，会把用户引到错误的方向。
+      final files = result?.files;
+      if (files == null || files.isEmpty) return;
+      final bytes = files.first.bytes;
       if (bytes == null) return;
 
       var text = utf8.decode(bytes, allowMalformed: true);
@@ -266,7 +270,15 @@ class _ProductManagePageState extends State<ProductManagePage> {
   /// 备份全部数据（商品 + 分类 + 销售记录）
   Future<void> _backup() async {
     try {
-      await ExportService.exportBackup(store.exportBackup());
+      final handedOff =
+          await ExportService.exportBackup(store.exportBackup());
+      if (!handedOff) {
+        // 用户在分享面板里取消了：不能记成「已备份」（否则「N 天没备份」
+        // 的提醒会消失，而用户手上其实没有文件）。
+        _toastErr('备份没有保存。请重试，并在分享面板里选「保存到文件」',
+            retry: _backup);
+        return;
+      }
       store.markBackedUp();
       _toast('备份已导出，请把这个文件保存好');
     } catch (_) {
@@ -284,7 +296,11 @@ class _ProductManagePageState extends State<ProductManagePage> {
         type: FileType.any,
         withData: true,
       );
-      final bytes = result?.files.single.bytes;
+      // 用 first 而不是 single：多选 / 空选时 single 会抛异常，
+      // 而这里被 catch 成「文件读不出来」，会把用户引到错误的方向。
+      final files = result?.files;
+      if (files == null || files.isEmpty) return;
+      final bytes = files.first.bytes;
       if (bytes == null) return;
       final text = utf8.decode(bytes, allowMalformed: true);
 
@@ -325,10 +341,10 @@ class _ProductManagePageState extends State<ProductManagePage> {
 
       var r = await store.importBackup(text);
       if (!mounted) return;
-      // v2 老备份不含欠账：默认拒绝，问过用户再带 allowCreditLoss 重来
-      if (r.needsCreditConfirm) {
-        if (!await confirmCreditLoss(context, r)) return;
-        r = await store.importBackup(text, allowCreditLoss: true);
+      // 备份缺少本机现有的数据（欠账 / 营业额）：默认拒绝，问过用户再重来
+      if (r.needsConfirm) {
+        if (!await confirmRestoreLoss(context, r)) return;
+        r = await store.importBackup(text, allowDataLoss: true);
         if (!mounted) return;
       }
       if (!r.ok) {
@@ -393,6 +409,25 @@ class _ProductManagePageState extends State<ProductManagePage> {
   }
 
   // ==================== 批量操作 ====================
+
+  /// 切换分类时清空批量选择。
+  ///
+  /// 不清空的话，批量模式下换了分类 / 搜索词之后，勾选集合里仍留着**当前看不见**
+  /// 的商品，此时点「批量删除」会把它们一并删掉 —— 而商品删除没有撤销。
+  void _setCategory(String c) {
+    setState(() {
+      _selectedCategory = c;
+      _selectedIds.clear();
+    });
+  }
+
+  /// 改搜索词时同样清空批量选择（原因见 [_setCategory]）。
+  void _setQuery(String q) {
+    setState(() {
+      _query = q;
+      _selectedIds.clear();
+    });
+  }
 
   void _enterBatchMode() {
     setState(() {
@@ -512,7 +547,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                   selected: _selectedCategory,
                   showUncategorized: uncatCount > 0,
                   uncategorizedCount: uncatCount,
-                  onSelect: (c) => setState(() => _selectedCategory = c),
+                  onSelect: _setCategory,
                   onAdd: _promptNewCategory,
                   onRename: _renameCategory,
                   onDelete: _deleteCategory,
@@ -527,8 +562,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                             selected: _selectedCategory,
                             showUncategorized: uncatCount > 0,
                             uncategorizedCount: uncatCount,
-                            onSelect: (c) =>
-                                setState(() => _selectedCategory = c),
+                            onSelect: _setCategory,
                             onAdd: _promptNewCategory,
                             onRename: _renameCategory,
                             onDelete: _deleteCategory,
@@ -627,7 +661,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
         child: TextField(
           controller: _searchCtrl,
-          onChanged: (v) => setState(() => _query = v),
+          onChanged: _setQuery,
           decoration: InputDecoration(
             hintText: '搜名称 / 拼音首字母 / 品牌 / 条码',
             prefixIcon: const Icon(Icons.search, size: 20),
@@ -638,7 +672,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                     icon: const Icon(Icons.close, size: 18),
                     onPressed: () {
                       _searchCtrl.clear();
-                      setState(() => _query = '');
+                      _setQuery('');
                     },
                   ),
           ),
@@ -648,19 +682,29 @@ class _ProductManagePageState extends State<ProductManagePage> {
   /// 商品列表
   Widget _productList(List<Product> products) {
     if (products.isEmpty) {
+      // 区分「一件商品都还没有」和「筛选 / 搜索没匹配到」两种情况：
+      // 旧实现共用「点右上角新增」这一套文案，用户明明只是搜不到，
+      // 却被引导去新增商品。
+      final filtered = store.products.isNotEmpty;
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.inbox_outlined,
-                size: 48, color: AppTheme.textSecondary.withValues(alpha: 0.45)),
+            Icon(filtered ? Icons.search_off : Icons.inbox_outlined,
+                size: 48,
+                color: AppTheme.textSecondary.withValues(alpha: 0.45)),
             const SizedBox(height: 8),
-            const Text('暂无商品', style: AppTheme.caption),
+            Text(filtered ? '没有找到匹配的商品' : '暂无商品',
+                style: AppTheme.caption),
             const SizedBox(height: 4),
-            const Text('点右上角「新增」录入第一件商品',
-                style: TextStyle(
-                    fontSize: AppTheme.fontCaption,
-                    color: AppTheme.textSecondary)),
+            Text(
+              filtered
+                  ? '换个词试试，或清空搜索 / 切回「全部」分类'
+                  : '点右上角「新增」录入第一件商品',
+              style: const TextStyle(
+                  fontSize: AppTheme.fontCaption,
+                  color: AppTheme.textSecondary),
+            ),
           ],
         ),
       );

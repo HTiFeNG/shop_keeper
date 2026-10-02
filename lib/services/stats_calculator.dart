@@ -113,7 +113,16 @@ abstract final class StatsCalculator {
     }
 
     final ranking = rankMap.values.toList()
-      ..sort((a, b) => b.revenue.compareTo(a.revenue));
+      ..sort((a, b) {
+        final byRevenue = b.revenue.compareTo(a.revenue);
+        if (byRevenue != 0) return byRevenue;
+        // 显式二级键：营收并列的商品顺序不能每次都不一样
+        //（**Dart 的 `List.sort` 不保证稳定**）。先按名称，再按编号。
+        final byName = a.name.compareTo(b.name);
+        return byName != 0
+            ? byName
+            : (a.productId ?? '').compareTo(b.productId ?? '');
+      });
 
     return YearlyStats(
       year: year,
@@ -226,7 +235,16 @@ abstract final class StatsCalculator {
     }
 
     final ranking = agg.rankMap.values.toList()
-      ..sort((a, b) => b.revenue.compareTo(a.revenue));
+      ..sort((a, b) {
+        final byRevenue = b.revenue.compareTo(a.revenue);
+        if (byRevenue != 0) return byRevenue;
+        // 显式二级键：营收并列的商品顺序不能每次都不一样
+        //（**Dart 的 `List.sort` 不保证稳定**）。先按名称，再按编号。
+        final byName = a.name.compareTo(b.name);
+        return byName != 0
+            ? byName
+            : (a.productId ?? '').compareTo(b.productId ?? '');
+      });
 
     return MonthlyStats(
       yearMonth: yearMonth,

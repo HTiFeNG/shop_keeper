@@ -329,12 +329,12 @@ void main() {
       // 默认拒绝，且数据完全没动 —— 欠账不能被静默清空
       final blocked = await store.importBackup(v2);
       expect(blocked.ok, isFalse);
-      expect(blocked.needsCreditConfirm, isTrue);
+      expect(blocked.needsConfirm, isTrue);
       expect(store.credits.length, 1);
       expect(store.products.single.name, '白菜');
 
       // 用户确认后才真的恢复，并清空欠账
-      final forced = await store.importBackup(v2, allowCreditLoss: true);
+      final forced = await store.importBackup(v2, allowDataLoss: true);
       expect(forced.ok, isTrue);
       expect(store.credits, isEmpty);
       expect(store.products.single.name, '备份里的商品');
@@ -449,6 +449,226 @@ void main() {
       expect(store.restoreInterrupted, isTrue);
       expect(store.products.single.name, '原有的商品',
           reason: '必须回滚到恢复前的快照，而不是留在撕裂状态');
+    });
+  });
+
+  group('4.2.3 修复回归', () {
+    test('中断自愈：回滚结果必须写回磁盘，不能只改内存', () async {
+      final store = StoreService.instance;
+      store.addProduct(Product(id: 'SP0001', name: '原有的商品'));
+      final snapshot = store.exportBackup();
+
+      SharedPreferences.setMockInitialValues({
+        'sk_seeded': true,
+        'sk_products': jsonEncode([
+          {'id': 'SP9999', 'name': '撕裂状态的新商品'}
+        ]),
+        'sk_sales': '{}',
+        'sk_credits': '[]',
+        'sk_restoring': true,
+        'sk_restore_snapshot': snapshot,
+      });
+      await store.load();
+
+      expect(store.restoreInterrupted, isTrue);
+      expect(store.products.single.name, '原有的商品');
+
+      // 关键：磁盘也得改成回滚后的数据。旧实现只换内存、直接清标记，
+      // 用户重启后读到的是「新商品 + 旧营业额」的撕裂状态。
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('sk_restoring'), isFalse, reason: '写盘成功才清标记');
+      final onDisk = jsonDecode(prefs.getString('sk_products')!) as List;
+      expect(onDisk.single['name'], '原有的商品',
+          reason: '磁盘上不能还留着撕裂状态的数据');
+    });
+
+    test('v3 备份缺 credits / 类型不对 → 同样要确认，不能静默清空欠账', () async {
+      final store = StoreService.instance;
+      store.addProduct(Product(id: 'SP0001', name: '白菜'));
+      store.addCredit(
+          Credit(id: 'c1', customer: '王婶', amount: 100, date: '2026-07-01'));
+
+      // 一份「version 是 3、但 credits 键被裁掉」的备份：
+      // 工具裁剪、手工编辑、传输截断都可能造成这种文件。
+      final v3NoCredits = jsonEncode({
+        'version': 3,
+        'exportedAt': '2026-07-02T00:00:00.000',
+        'products': [
+          {'id': 'SP0009', 'name': '备份里的商品'}
+        ],
+        'categories': <String>[],
+        'sales': {
+          '2026-07-01': {
+            'date': '2026-07-01',
+            'items': [
+              {
+                'id': 's1',
+                'name': '旧账',
+                'quantity': 1,
+                'unitPrice': 3,
+                'totalPrice': 3,
+              },
+            ],
+          },
+        },
+      });
+
+      final blocked = await store.importBackup(v3NoCredits);
+      expect(blocked.ok, isFalse, reason: 'version 是 3 也不能绕过确认');
+      expect(blocked.needsConfirm, isTrue);
+      expect(store.credits.length, 1, reason: '欠账不能被静默清空');
+      expect(store.products.single.name, '白菜');
+
+      // credits 存在但类型不对（不是数组）→ 同样要确认
+      final wrongType = jsonEncode({
+        'version': 3,
+        'products': [
+          {'id': 'SP0009', 'name': '备份里的商品'}
+        ],
+        'categories': <String>[],
+        'sales': {
+          '2026-07-01': {
+            'date': '2026-07-01',
+            'items': [
+              {
+                'id': 's1',
+                'name': '旧账',
+                'quantity': 1,
+                'unitPrice': 3,
+                'totalPrice': 3,
+              },
+            ],
+          },
+        },
+        'credits': {'oops': true},
+      });
+      final blocked2 = await store.importBackup(wrongType);
+      expect(blocked2.needsConfirm, isTrue);
+      expect(store.credits.length, 1);
+
+      // 用户确认后才真的清空
+      final forced = await store.importBackup(v3NoCredits, allowDataLoss: true);
+      expect(forced.ok, isTrue);
+      expect(store.credits, isEmpty);
+    });
+
+    test('备份里没有任何营业额记录 → 拒绝恢复，不能静默清空营业额', () async {
+      final store = StoreService.instance;
+      store.addProduct(Product(id: 'SP0001', name: '白菜'));
+      store.upsertSaleItem(
+          '2026-07-01',
+          SaleItem(
+              id: 's1',
+              name: '白菜',
+              quantity: 2,
+              unitPrice: 3,
+              totalPrice: 6));
+      expect(store.sales.length, 1);
+
+      final noSales = jsonEncode({
+        'version': 3,
+        'exportedAt': '2026-07-02T00:00:00.000',
+        'products': [
+          {'id': 'SP0009', 'name': '备份里的商品'}
+        ],
+        'categories': <String>[],
+        'sales': <String, dynamic>{},
+        'credits': <dynamic>[],
+      });
+
+      final blocked = await store.importBackup(noSales);
+      expect(blocked.ok, isFalse);
+      expect(blocked.needsConfirm, isTrue);
+      expect(store.sales.length, 1, reason: '营业额不能被静默清空');
+      expect(store.products.single.name, '白菜');
+
+      // 确认后确实能恢复成「没有营业额」的状态
+      final forced = await store.importBackup(noSales, allowDataLoss: true);
+      expect(forced.ok, isTrue);
+      expect(store.sales, isEmpty);
+      expect(store.products.single.name, '备份里的商品');
+    });
+
+    test('非法日期键（2026-02-31）整条丢弃，不会跑到别的日期', () async {
+      final store = StoreService.instance;
+      final text = jsonEncode({
+        'version': 3,
+        'products': [
+          {'id': 'SP0001', 'name': '白菜'}
+        ],
+        'categories': <String>[],
+        'sales': {
+          '2026-02-31': {
+            'date': '2026-02-31',
+            'items': [
+              {
+                'id': 'x',
+                'name': '白菜',
+                'quantity': 1,
+                'unitPrice': 2,
+                'totalPrice': 2,
+              },
+            ],
+          },
+          '2026-07-01': {
+            'date': '2026-07-01',
+            'items': [
+              {
+                'id': 'y',
+                'name': '白菜',
+                'quantity': 1,
+                'unitPrice': 3,
+                'totalPrice': 3,
+              },
+            ],
+          },
+        },
+        'credits': <dynamic>[],
+      });
+
+      final r = await store.importBackup(text);
+      expect(r.ok, isTrue);
+      expect(store.sales.keys, ['2026-07-01'],
+          reason: '2 月没有 31 号，那天整条应被丢弃');
+    });
+
+    test('CSV 导入：名称 / 分类 / 品牌为空时不覆盖原值', () {
+      final store = StoreService.instance;
+      store.addProduct(Product(
+        id: 'SP0001',
+        name: '农夫山泉',
+        category: '饮料',
+        brand: '农夫',
+        barcode: '6901',
+        retailPrice: 2,
+        purchasePrice: 1,
+      ));
+
+      // 条码对得上、但其余文本列都是空的 CSV 行
+      final r = store.importProducts([
+        Product(id: '', name: '', category: '', brand: '', barcode: '6901'),
+      ]);
+
+      expect(r.overwritten, 1);
+      expect(store.products.single.name, '农夫山泉', reason: '空名称不能把原名清掉');
+      expect(store.products.single.category, '饮料');
+      expect(store.products.single.brand, '农夫');
+      expect(store.products.single.retailPrice, 2, reason: '价格空值同样保留');
+      expect(store.products.single.purchasePrice, 1);
+    });
+
+    test('分类不存在时 renameCategory 返回 false，不抛 RangeError', () {
+      final store = StoreService.instance;
+      expect(store.renameCategory('不存在的分类', '新名字'), isFalse);
+    });
+
+    test('CSV 公式注入防护：= 开头的名称导出后被中和，导入能还原', () {
+      final p = Product(id: 'SP1', name: '=SUM(A1:A9)', barcode: '');
+      final row = p.toCsvRow();
+      expect(row[1], "'=SUM(A1:A9)",
+          reason: 'Excel 会把 = 开头的内容当公式执行，必须前置单引号');
+      // 往返一致：App 自己导入时要能还原成原名
+      expect(Product.fromCsvRow(row).name, '=SUM(A1:A9)');
     });
   });
 }

@@ -167,10 +167,16 @@ class StoreService extends ChangeNotifier {
       if (productsRaw != null && productsRaw.isNotEmpty) {
         final decoded = _tryDecode(productsRaw);
         if (decoded is List) {
+          // 重复编号必须挡掉（备份解码路径已有同样的保护）：明细是按 productId
+          // 关联商品的，同一编号出现两次会让 findById / updateProduct 只命中
+          // 第一条，编辑和删除都会改错对象。
+          final seenIds = <String>{};
           for (final e in decoded) {
             final p = e is Map<String, dynamic> ? _tryProduct(e) : null;
             // 编号和名称都为空的行没有意义，也编辑不了
             if (p == null || (p.id.isEmpty && p.name.isEmpty)) {
+              dropped++;
+            } else if (p.id.isNotEmpty && !seenIds.add(p.id)) {
               dropped++;
             } else {
               newProducts.add(p);
@@ -248,7 +254,9 @@ class StoreService extends ChangeNotifier {
           ..addAll(rollback.categories.where((c) => c != kCategoryAll));
         interrupted = true;
       }
-      await prefs.setBool(_kRestoring, false);
+      // 注意：这里**先不清** `sk_restoring` 标记。回滚结果还没落盘，此时清掉
+      // 标记的话，用户一旦直接杀进程重开，磁盘上留下的仍是撕裂状态，而标记
+      // 已经没了 —— 不会再回滚。是否清标记交给下面赋值之后的落盘步骤决定。
     }
 
     // ---- 一次性赋值 ----
@@ -295,6 +303,20 @@ class StoreService extends ChangeNotifier {
     // 否则升级后新建商品的编号会撞上老账里的悬空引用。
     _nextSeq = prefs.getInt(_kNextSeq) ?? 1;
     _syncSeq();
+
+    // ---- 中断自愈：回滚结果必须**落回磁盘**才算真的修好 ----
+    // 只在内存里换回快照是不够的：磁盘上仍是「新商品 + 旧营业额」的撕裂状态，
+    // 而标记一旦被清掉，下次启动就不会再回滚，用户重启后读到的还是坏数据。
+    // 所以这里按 importBackup 的同款做法做「内存 + 磁盘一起回滚」：
+    // 写盘成功才清标记；写失败就**保留标记**，下次启动再试一次。
+    if (interrupted) {
+      try {
+        await _writeAll();
+        await _writeRestoring(false);
+      } catch (_) {
+        saveError = '上次恢复备份被中断，数据已回滚但写盘失败，请立即导出备份';
+      }
+    }
 
     ready = true;
     notifyListeners();
@@ -413,6 +435,13 @@ class StoreService extends ChangeNotifier {
     return id;
   }
 
+  /// **只读预览**下一个编号：不分配序号、不落盘。
+  ///
+  /// 给「新增商品」页展示用。旧实现在页面的 build() 里直接调 [nextId]，
+  /// 于是每重建一次（改类别、切星标、键盘弹出）就消耗并写盘一个编号，
+  /// 而且界面显示的编号与保存时再取的那个**对不上**。
+  String peekNextId() => 'SP${_nextSeq.toString().padLeft(4, '0')}';
+
   /// 该条码是否已被**其它**商品占用（空条码不参与判断）
   bool barcodeTaken(String barcode, {String? ignoreId}) {
     if (barcode.isEmpty) return false;
@@ -501,7 +530,12 @@ class StoreService extends ChangeNotifier {
       }
     });
     final list = products.where((p) => (qty[p.id] ?? 0) > 0).toList()
-      ..sort((a, b) => (qty[b.id] ?? 0).compareTo(qty[a.id] ?? 0));
+      ..sort((a, b) {
+        final byQty = (qty[b.id] ?? 0).compareTo(qty[a.id] ?? 0);
+        // 显式二级键（商品编号即创建顺序）：Dart 的 List.sort 不保证稳定，
+        // 销量相同的商品顺序否则每次都会变。
+        return byQty != 0 ? byQty : a.id.compareTo(b.id);
+      });
     return list.take(limit).toList();
   }
 
@@ -522,8 +556,12 @@ class StoreService extends ChangeNotifier {
   bool renameCategory(String oldName, String newName) {
     final n = newName.trim();
     if (n.isEmpty || n == oldName) return true;
+    final idx = categories.indexOf(oldName);
+    // 防御：oldName 不在列表里时 indexOf 返回 -1，直接按下标赋值会抛 RangeError。
+    // UI 目前只走合法路径，但这是公开 API，不该让调用方踩崩。
+    if (idx < 0) return false;
     if (_isDuplicateCategory(n, ignore: oldName)) return false;
-    categories[categories.indexOf(oldName)] = n;
+    categories[idx] = n;
     for (final p in products) {
       if (p.category == oldName) {
         p.category = n;
@@ -733,24 +771,55 @@ class StoreService extends ChangeNotifier {
 
   // ==================== 赊账台账 ====================
 
+  /// 赊账的登记顺序表，给排序当显式二级键用。
+  ///
+  /// **Dart 的 `List.sort` 不保证稳定**：只按日期或金额排的话，并列项的相对
+  /// 顺序会随机漂移（催款列表看着像在乱跳）。用登记顺序兜底。
+  Map<String, int> _creditOrder() {
+    final m = <String, int>{};
+    for (var i = 0; i < credits.length; i++) {
+      m[credits[i].id] = i;
+    }
+    return m;
+  }
+
   /// 未结清的赊账，按「挂得最久的排最前」（催款优先级）
   List<Credit> unsettledCredits() {
+    final order = _creditOrder();
     final list = credits.where((c) => !c.settled).toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
+      ..sort((a, b) {
+        final byDate = a.date.compareTo(b.date);
+        return byDate != 0
+            ? byDate
+            : (order[a.id] ?? 0).compareTo(order[b.id] ?? 0);
+      });
     return list;
   }
 
   /// 已结清的赊账，最近结清的排最前
   List<Credit> settledCredits() {
+    final order = _creditOrder();
     final list = credits.where((c) => c.settled).toList()
-      ..sort((a, b) => (b.settledDate ?? b.date).compareTo(a.settledDate ?? a.date));
+      ..sort((a, b) {
+        final byDate =
+            (b.settledDate ?? b.date).compareTo(a.settledDate ?? a.date);
+        return byDate != 0
+            ? byDate
+            : (order[a.id] ?? 0).compareTo(order[b.id] ?? 0);
+      });
     return list;
   }
 
   /// 全部赊账按日期倒序（列表展示用）
   List<Credit> allCredits() {
+    final order = _creditOrder();
     final list = List<Credit>.of(credits)
-      ..sort((a, b) => b.date.compareTo(a.date));
+      ..sort((a, b) {
+        final byDate = b.date.compareTo(a.date);
+        return byDate != 0
+            ? byDate
+            : (order[a.id] ?? 0).compareTo(order[b.id] ?? 0);
+      });
     return list;
   }
 
@@ -778,7 +847,12 @@ class StoreService extends ChangeNotifier {
         oldestDate: oldest,
       );
     }).toList()
-      ..sort((a, b) => b.total.compareTo(a.total));
+      ..sort((a, b) {
+        final byTotal = b.total.compareTo(a.total);
+        // 显式二级键：欠得一样多的客户顺序不能每次都不一样
+        //（**Dart 的 `List.sort` 不保证稳定**）。
+        return byTotal != 0 ? byTotal : a.customer.compareTo(b.customer);
+      });
     return out;
   }
 
@@ -876,11 +950,13 @@ class StoreService extends ChangeNotifier {
   /// 若在 ② 与 ③ 之间被杀进程，下次启动时 [load] 会看到标记仍在，用快照把
   /// 数据回滚 —— 磁盘上那份「新商品 + 旧营业额」的撕裂状态因此可以自愈。
   ///
-  /// [allowCreditLoss]：v2 老备份没有欠账（credits）字段，恢复它会把现有欠账
-  /// 整体清空。默认拒绝并要求调用方先向用户确认，确认后带 true 重来。
+  /// [allowDataLoss]：备份里可能缺少本机现有的数据（v2 老备份没有欠账字段、
+  /// v3 备份的 credits 缺失或类型不对、或备份里没有任何营业额记录），恢复这类
+  /// 备份会把本机的对应数据整体清空。默认拒绝并要求调用方先向用户确认，
+  /// 用户确认后带 true 重来一次。
   Future<RestoreResult> importBackup(
     String jsonText, {
-    bool allowCreditLoss = false,
+    bool allowDataLoss = false,
   }) async {
     final BackupPayload? payload;
     try {
@@ -898,8 +974,17 @@ class StoreService extends ChangeNotifier {
       return RestoreResult.fail('备份里没有任何商品，已取消恢复以保护现有数据');
     }
 
-    // 保护：v2 老备份不含欠账，直接恢复会把现有欠账整体清空
-    if (payload.version < 3 && credits.isNotEmpty && !allowCreditLoss) {
+    // 保护：备份里没有任何营业额记录，而本机有 → 多半是文件被裁剪过或选错了，
+    // 直接恢复会把本机历史营业额**整体清空**。旧实现只护了「备份无商品」，
+    // 对营业额没有对称的护栏。
+    if (payload.sales.isEmpty && sales.isNotEmpty && !allowDataLoss) {
+      return RestoreResult.needsSalesConfirm(sales.length);
+    }
+
+    // 保护：备份里没有「可用的欠账数据」，而本机有 → 直接恢复会把现有欠账整体清空。
+    // 不能只看 version < 3：v3 备份的 credits 键缺失、或被裁成别的类型时，
+    // 解码同样只能给出空列表，旧判断会漏掉这条与 v2 同源的静默清空路径。
+    if (!payload.hasCredits && credits.isNotEmpty && !allowDataLoss) {
       return RestoreResult.needsCreditConfirm(credits.length);
     }
 
@@ -909,13 +994,15 @@ class StoreService extends ChangeNotifier {
     final prevSeeded = seeded;
     final prevNextSeq = _nextSeq;
 
-    // 快照必须先写成功：它是恢复被打断后唯一能回到原状态的东西
+    // 快照必须先写成功：它是恢复被打断后唯一能回到原状态的东西。
+    // 「置标记」也放进同一个 try —— 它同样在写盘，抛异常时不能让裸异常
+    // 穿出 importBackup（调用方只会处理 RestoreResult）。
     try {
       await _writeRestoreSnapshot(snapshot);
+      await _writeRestoring(true);
     } catch (_) {
       return RestoreResult.fail('无法写入恢复前快照，已取消恢复（请检查存储空间）');
     }
-    await _writeRestoring(true);
 
     products = payload.products;
     categories = payload.categories;
@@ -966,6 +1053,11 @@ class StoreService extends ChangeNotifier {
   }
 
   /// 撤销上一次恢复：把数据还原成「执行那次恢复之前」的样子。
+  ///
+  /// 实现方式说明：这里是把「恢复前快照」当成一份备份再恢复一次，而
+  /// [importBackup] 会**先把当前数据存成新的快照**。因此连点两次「撤销恢复」
+  /// 会切回上一次的状态（两个状态之间来回切），而不是层层回退。
+  /// 单次撤销的场景够用；要支持多级撤销得改成快照栈。
   Future<bool> undoLastRestore() async {
     final prefs = await SharedPreferences.getInstance();
     final text = prefs.getString(_kRestoreSnapshot);
@@ -1044,10 +1136,11 @@ class StoreService extends ChangeNotifier {
 
   /// 把远端文本恢复进本地（内部走 importBackup，因此自带快照 + 可撤销）
   ///
-  /// [allowCreditLoss] 见 [importBackup]：v2 老备份不含欠账，需用户确认后才清空。
+  /// [allowDataLoss] 见 [importBackup]：备份里缺本机现有的数据时，
+  /// 需用户确认后才继续。
   Future<RestoreResult> applyRemote(String text,
-      {bool allowCreditLoss = false}) async {
-    final r = await importBackup(text, allowCreditLoss: allowCreditLoss);
+      {bool allowDataLoss = false}) async {
+    final r = await importBackup(text, allowDataLoss: allowDataLoss);
     if (r.ok) {
       lastSyncAt = DateTime.now();
       lastSyncError = null;
@@ -1134,12 +1227,12 @@ class StoreService extends ChangeNotifier {
   }
 
   /// 应用启动时挂起的云端备份
-  Future<RestoreResult> applyPendingRemote({bool allowCreditLoss = false}) async {
+  Future<RestoreResult> applyPendingRemote({bool allowDataLoss = false}) async {
     final text = _pendingRemoteText;
     if (text == null) {
       return RestoreResult.fail('没有待恢复的云端备份');
     }
-    return applyRemote(text, allowCreditLoss: allowCreditLoss);
+    return applyRemote(text, allowDataLoss: allowDataLoss);
   }
 
   // ==================== 商品 CSV 导入 / 导出 ====================
@@ -1170,11 +1263,13 @@ class StoreService extends ChangeNotifier {
       if (p.barcode.isNotEmpty) {
         final existing = findByBarcode(p.barcode);
         if (existing != null) {
-          existing
-            ..name = p.name
-            ..category = p.category
-            ..brand = p.brand
-            ..barcode = p.barcode;
+          // 与价格字段保持一致：CSV 的空单元格解析出来是空串 / 0，无条件覆盖
+          // 会把用户填好的名称、分类、品牌**静默清空**。空值一律保留原值
+          // （确实想把分类清空的话，在 CSV 里写「未分类」即可）。
+          if (p.name.isNotEmpty) existing.name = p.name;
+          if (p.category.isNotEmpty) existing.category = p.category;
+          if (p.brand.isNotEmpty) existing.brand = p.brand;
+          existing.barcode = p.barcode;
           if (p.wholesalePrice > 0) existing.wholesalePrice = p.wholesalePrice;
           if (p.purchasePrice > 0) existing.purchasePrice = p.purchasePrice;
           if (p.retailPrice > 0) existing.retailPrice = p.retailPrice;

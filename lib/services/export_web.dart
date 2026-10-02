@@ -43,6 +43,11 @@ void downloadTextFile(String filename, String text,
   });
 }
 
+/// CSV 公式注入防护：以 `= + - @` 开头的值在 Excel / WPS 里会被当成**公式**
+/// 执行（商品名来自用户输入，比如 `=cmd|...`）。前置一个单引号让它按文本处理。
+String _safeText(String v) =>
+    (v.isEmpty || !'=+-@'.contains(v[0])) ? v : "'$v";
+
 /// 导出营业额 CSV：当日明细 + 月度汇总 两段式。
 Future<void> exportSales({
   required String date,
@@ -57,7 +62,7 @@ Future<void> exportSales({
   rows.add(['序号', '商品', '数量', '单价', '总价']);
   double dayTotal = 0;
   for (var i = 0; i < dayRows.length; i++) {
-    rows.add(['${i + 1}', ...dayRows[i]]);
+    rows.add(['${i + 1}', ...dayRows[i].map(_safeText)]);
     dayTotal += double.tryParse(dayRows[i][3]) ?? 0;
   }
   rows.add(['', '合计', '', '', fmtPrice(dayTotal)]);
@@ -93,7 +98,11 @@ Future<void> exportProducts(String csv) async {
 }
 
 /// 导出备份 JSON。
-Future<void> exportBackup(String jsonText) async {
+///
+/// 浏览器下载无法可靠回传「用户是否真的保存了」，但下载动作已经触发
+/// （`<a download>` 一旦 click 就会进下载列表），这里按成功返回。
+Future<bool> exportBackup(String jsonText) async {
   downloadTextFile('店铺管家备份_${_stamp()}.json', jsonText,
       mime: 'application/json;charset=utf-8');
+  return true;
 }

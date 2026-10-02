@@ -68,10 +68,31 @@ class Product {
   ];
 
   List<String> toCsvRow() => [
-        id, name, category, brand, _barcodeCell(barcode),
+        _textCell(id), _textCell(name), _textCell(category), _textCell(brand),
+        _barcodeCell(barcode),
         fmtPrice(wholesalePrice), fmtPrice(purchasePrice),
         fmtPrice(retailPrice),
       ];
+
+  /// CSV 文本单元格的防护：中和以 `= + - @` 开头的值。
+  ///
+  /// 这类值在 Excel / WPS 里会被当成**公式**求值（CSV 公式注入）：一个名字叫
+  /// `=SUM(...)`、`=cmd|...` 的商品，导出后一打开就会被执行。前置一个单引号
+  /// 让 Excel 按文本处理，本 App 重新导入时再由 [_parseText] 剥掉。
+  /// 条码走另一条路径（[_barcodeCell] / [_parseBarcode]），它故意使用
+  /// `="..."` 形式，不经过这里。
+  static String _textCell(String v) {
+    if (v.isEmpty) return v;
+    if ('=+-@'.contains(v[0])) return "'$v";
+    return v;
+  }
+
+  /// 还原 [_textCell] 的防护：剥掉为防止公式注入而前置的单引号。
+  static String _parseText(String raw) {
+    var s = raw.trim();
+    if (s.startsWith("'")) s = s.substring(1);
+    return s.trim();
+  }
 
   /// CSV 里「条码」这一格的写法。
   ///
@@ -108,10 +129,10 @@ class Product {
 
   /// 从 CSV 行解析（列顺序需与 [csvHeader] 一致）
   factory Product.fromCsvRow(List<String> row) => Product(
-        id: row.isNotEmpty ? row[0].trim() : '',
-        name: row.length > 1 ? row[1].trim() : '',
-        category: row.length > 2 ? row[2].trim() : '',
-        brand: row.length > 3 ? row[3].trim() : '',
+        id: row.isNotEmpty ? _parseText(row[0]) : '',
+        name: row.length > 1 ? _parseText(row[1]) : '',
+        category: row.length > 2 ? _parseText(row[2]) : '',
+        brand: row.length > 3 ? _parseText(row[3]) : '',
         barcode: row.length > 4 ? _parseBarcode(row[4]) : '',
         wholesalePrice: row.length > 5 ? parsePrice(row[5]) : 0,
         purchasePrice: row.length > 6 ? parsePrice(row[6]) : 0,

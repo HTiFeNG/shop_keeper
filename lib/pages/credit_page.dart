@@ -472,7 +472,9 @@ class _CreditEditorState extends State<_CreditEditor> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
-    if (picked != null) setState(() => _date = du.dateKey(picked));
+    // 跨 await 之后必须确认组件还在树上再 setState
+    if (picked == null || !mounted) return;
+    setState(() => _date = du.dateKey(picked));
   }
 
   void _submit() {

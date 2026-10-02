@@ -58,8 +58,12 @@ class NutstoreConfig {
 
   /// [includeSecret] = false 时**不写出应用密码**。
   ///
-  /// 密码单独存进平台安全存储（Android Keystore），落在 shared_preferences 里
-  /// 的配置就只有账号和路径。仅当安全存储写入失败时才回退成 true。
+  /// 与实现保持一致：应用密码目前**和其余配置一起存在 shared_preferences**
+  /// （应用私有目录），并没有独立的密钥库 / 安全存储 —— 这里不描述未实现的
+  /// 机制。之所以仍然安全，靠的是 Android 侧 `allowBackup=false` +
+  /// `data_extraction_rules.xml`：应用私有数据不会被系统的云备份复制到
+  /// Google Drive。Web 端调用方一律传 false（浏览器会拦跨域 WebDAV，同步在
+  /// Web 上本来就不可用，不该让密码落进 localStorage）。
   Map<String, dynamic> toJson({bool includeSecret = true}) => {
         'baseUrl': baseUrl,
         'account': account,
