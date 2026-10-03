@@ -553,7 +553,7 @@ class _SalesPageState extends State<SalesPage>
         ),
         // 底部：常用/常卖快捷条 + 添加按钮
         Container(
-          color: Colors.white,
+          color: AppTheme.cardBackground,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: SafeArea(
             top: false,
@@ -708,7 +708,7 @@ class _SalesPageState extends State<SalesPage>
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppTheme.cardBackground,
           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           border: Border.all(color: color.withValues(alpha: 0.35)),
         ),
@@ -718,7 +718,7 @@ class _SalesPageState extends State<SalesPage>
             const SizedBox(width: 8),
             Expanded(
               child: Text(text,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: AppTheme.fontCaption,
                       color: AppTheme.textPrimary)),
             ),
@@ -732,7 +732,7 @@ class _SalesPageState extends State<SalesPage>
               TextButton(
                 onPressed: secondAction,
                 child: Text(secondLabel,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: AppTheme.fontCaption,
                         color: AppTheme.textSecondary)),
               ),
@@ -755,7 +755,7 @@ class _SalesPageState extends State<SalesPage>
       width: double.infinity,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [AppTheme.totalGradientStart, AppTheme.totalGradientEnd],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -824,13 +824,13 @@ class _SalesPageState extends State<SalesPage>
           const SizedBox(height: 12),
           Text(
             du.dateKey(DateTime.now()) == _date ? '今天还没记账' : '这一天没有记录',
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: AppTheme.fontCardTitle,
                 fontWeight: FontWeight.w600,
                 color: AppTheme.textPrimary),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             '点下方「添加商品」选货自动带价，\n或「手动输入」直接记一笔',
             textAlign: TextAlign.center,
             style:

@@ -240,7 +240,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                 ),
                 selected: _preset == i,
                 selectedColor: AppTheme.orangeSurface,
-                backgroundColor: Colors.white,
+                backgroundColor: AppTheme.cardBackground,
                 onSelected: (_) {
                   if (i == 4) {
                     _pickRange();
@@ -282,7 +282,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: AppTheme.fontStatValue,
                   fontWeight: FontWeight.w700,
                   color: AppTheme.priceRed),
@@ -322,7 +322,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                     child: Text(du.dayLabel(date),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: AppTheme.fontLabel,
                             fontWeight: FontWeight.w600,
                             color: AppTheme.primaryText)),
@@ -333,12 +333,12 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.right,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: AppTheme.fontCaption,
                             color: AppTheme.primaryText)),
                   ),
                   const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right,
+                  Icon(Icons.chevron_right,
                       size: 18, color: AppTheme.primaryText),
                 ],
               ),
@@ -390,7 +390,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
                   ),
                   Text(
                     '¥${fmtPrice(it.totalPrice)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: AppTheme.fontBody,
                         fontWeight: FontWeight.w700,
                         color: AppTheme.priceRed),
@@ -413,7 +413,7 @@ class _SalesSearchPageState extends State<SalesSearchPage> {
             Text(_query.isEmpty ? '这段时间没有记录' : '没有找到「$_query」',
                 style: AppTheme.body),
             const SizedBox(height: 4),
-            const Text('换个商品名，或把日期范围放宽一点',
+            Text('换个商品名，或把日期范围放宽一点',
                 style: AppTheme.caption),
           ],
         ),

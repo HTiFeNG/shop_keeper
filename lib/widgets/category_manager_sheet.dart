@@ -24,7 +24,7 @@ Future<void> showCategoryManager(
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: Colors.white,
+    backgroundColor: AppTheme.cardBackground,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
     ),
@@ -165,7 +165,7 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
             ),
           ),
           if (_order.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 8, 20, 24),
               child: Text('点分类栏上的「＋ 分类」新建一个',
                   style: TextStyle(
@@ -198,16 +198,16 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
     return Material(
       // key 用分类名：ReorderableListView 靠它追踪是哪一个被拖走了
       key: ValueKey('cat-$name'),
-      color: Colors.white,
+      color: AppTheme.cardBackground,
       child: Container(
         constraints: const BoxConstraints(minHeight: 56),
         padding: const EdgeInsets.only(left: 16, right: 4),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           border: Border(bottom: BorderSide(color: AppTheme.divider, width: 1)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.folder_outlined,
+            Icon(Icons.folder_outlined,
                 size: 20, color: AppTheme.textSecondary),
             const SizedBox(width: 12),
             Expanded(
@@ -225,7 +225,7 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
             ),
             IconButton(
               tooltip: '删除',
-              icon: const Icon(Icons.delete_outline,
+              icon: Icon(Icons.delete_outline,
                   size: 20, color: AppTheme.priceRed),
               onPressed: () => _delete(i),
             ),
@@ -237,7 +237,7 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
                 width: 48,
                 height: 48,
                 alignment: Alignment.center,
-                child: const Icon(Icons.drag_handle,
+                child: Icon(Icons.drag_handle,
                     size: 22, color: AppTheme.textSecondary),
               ),
             ),

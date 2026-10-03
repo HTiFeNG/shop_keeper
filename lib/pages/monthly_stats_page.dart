@@ -146,7 +146,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
         break;
       case StatsMode.range:
         title = '${du.dayLabel(_start)} – ${du.dayLabel(_end)}';
-        onTap = const Icon(Icons.edit_calendar_outlined,
+        onTap = Icon(Icons.edit_calendar_outlined,
             size: 20, color: AppTheme.primaryText);
         break;
       case StatsMode.year:
@@ -347,7 +347,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
             const SizedBox(height: 12),
             Text(text, style: AppTheme.body),
             const SizedBox(height: 6),
-            const Text('回到「明细记录」记几笔，再回来看看统计',
+            Text('回到「明细记录」记几笔，再回来看看统计',
                 style: AppTheme.caption),
           ],
         ),
@@ -478,12 +478,12 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
             ],
           ),
           const SizedBox(height: 4),
-          const Text('按「售出价 − 售出时的参考进价」估算，之后改进价不会改写历史',
+          Text('按「售出价 − 售出时的参考进价」估算，之后改进价不会改写历史',
               style: AppTheme.caption),
           if (missing > 0) ...[
             const SizedBox(height: 2),
             Text('有 $missing 条明细没填进价，未计入毛利',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: AppTheme.fontCaption,
                     color: AppTheme.primaryText)),
           ],
@@ -526,7 +526,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
         children: [
           Text(title, style: AppTheme.sectionTitle),
           const SizedBox(height: 4),
-          const Text('看看哪些货最走量，进货心里有数', style: AppTheme.caption),
+          Text('看看哪些货最走量，进货心里有数', style: AppTheme.caption),
           const SizedBox(height: 10),
           for (var i = 0; i < top.length; i++) ...[
             _rankRow(top[i], i + 1, maxRevenue),
@@ -576,7 +576,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
                       rank.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: AppTheme.fontLabel,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.textPrimary),
@@ -584,7 +584,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
                   ),
                   Text(
                     formatCurrency(rank.revenue),
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: AppTheme.fontLabel,
                         fontWeight: FontWeight.w700,
                         color: AppTheme.priceRed),
@@ -601,7 +601,7 @@ class _MonthlyStatsPageState extends State<MonthlyStatsPage> {
                         value: fraction,
                         minHeight: 6,
                         backgroundColor: AppTheme.divider,
-                        valueColor: const AlwaysStoppedAnimation(
+                        valueColor: AlwaysStoppedAnimation(
                             AppTheme.chartOrange),
                       ),
                     ),

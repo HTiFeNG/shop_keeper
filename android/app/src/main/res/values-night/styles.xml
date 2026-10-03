@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 系统深色时的启动 / 窗口主题。
+         与 values/styles.xml 中的同名 style 一一对应，只是换成 Black 系列：
+         这样启动瞬间的状态栏图标是浅色的，不会在深底上「看不见」。 -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/app_background</item>
+    </style>
+</resources>

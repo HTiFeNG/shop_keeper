@@ -122,7 +122,7 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
     final it = widget.item;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.divider, width: 1)),
       ),
       child: Row(
@@ -250,7 +250,7 @@ class _SaleItemTableRowState extends State<SaleItemTableRow> {
             width: 48,
             child: IconButton(
               tooltip: '删除此行',
-              icon: const Icon(Icons.delete_outline,
+              icon: Icon(Icons.delete_outline,
                   size: 20, color: AppTheme.textSecondary),
               onPressed: widget.onDelete,
             ),
@@ -375,7 +375,7 @@ class SaleItemTable extends StatelessWidget {
           Container(
             color: AppTheme.orangeSurface,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: const Row(
+            child: Row(
               children: [
                 SizedBox(width: 32, child: Text('序号', style: AppTheme.caption, textAlign: TextAlign.center)),
                 Expanded(flex: 4, child: Text('商品', style: AppTheme.caption)),

@@ -133,6 +133,14 @@
       font-size: 16px;
       line-height: 1;
     }
+    /* 深色模式：跟着系统换掉页面底色与启动遮罩，
+       否则深色下打开网页会先闪一下亮白。
+       色值与 Flutter 端 AppTheme 的深色底保持一致（#1A1816 / 卡片 #24211E）。 */
+    @media (prefers-color-scheme: dark) {
+      html, body { background-color: #1A1816; }
+      #sk-splash { background: #1A1816; }
+      #sk-splash .sk-tip { color: #A9A29A; }
+    }
   </style>
 </head>
 <body>

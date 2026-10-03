@@ -197,7 +197,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
               if (it.isManualMode) _manualTag(),
               IconButton(
                 tooltip: '删除此行',
-                icon: const Icon(Icons.delete_outline,
+                icon: Icon(Icons.delete_outline,
                     color: AppTheme.textSecondary, size: 22),
                 onPressed: widget.onDelete,
               ),
@@ -211,7 +211,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
           // 后这一行正好超出 3px，debug 下会出现黄黑溢出条纹。
           Row(
             children: [
-              const Text('数量', style: AppTheme.caption),
+              Text('数量', style: AppTheme.caption),
               const SizedBox(width: 6),
               _stepBtn(Icons.remove,
                   it.quantity <= 0 ? null : () => _changeQuantity(it.quantity - 1)),
@@ -237,7 +237,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
               ),
               _stepBtn(Icons.add, () => _changeQuantity(it.quantity + 1)),
               const SizedBox(width: 12),
-              const Text('单价', style: AppTheme.caption),
+              Text('单价', style: AppTheme.caption),
               const SizedBox(width: 6),
               Expanded(
                 child: TextField(
@@ -268,7 +268,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
           // 行3：总价 + 联动图标
           Row(
             children: [
-              const Text('总价', style: AppTheme.caption),
+              Text('总价', style: AppTheme.caption),
               const SizedBox(width: 12),
               Tooltip(
                 message: it.isManualMode
@@ -375,7 +375,7 @@ class _SaleItemCardState extends State<SaleItemCard> {
           color: AppTheme.priceRed.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Text(
+        child: Text(
           '手动',
           style: TextStyle(
               fontSize: AppTheme.fontCaption,

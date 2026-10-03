@@ -96,7 +96,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
 
     return Container(
       height: maxHeight,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppTheme.background,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -109,7 +109,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
               padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
               child: Row(
                 children: [
-                  const Text('从商品库选择', style: AppTheme.sectionTitle),
+                  Text('从商品库选择', style: AppTheme.sectionTitle),
                   const Spacer(),
                   IconButton(
                     tooltip: '关闭',
@@ -177,7 +177,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
       padding: const EdgeInsets.only(bottom: 16),
       children: [
         if (favorites.isNotEmpty && _category == kCategoryAll) ...[
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Row(
               children: [
@@ -192,10 +192,10 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
             ),
           ),
           for (final p in favorites) _productTile(p),
-          const Divider(indent: 16, endIndent: 16, color: AppTheme.divider),
+          Divider(indent: 16, endIndent: 16, color: AppTheme.divider),
         ],
         if (list.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.all(32),
             child: Center(
               child: Text('该分类下暂无商品', style: AppTheme.caption),
@@ -209,7 +209,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
 
   Widget _buildList(List<Product> list) {
     if (list.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -245,7 +245,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
         ),
         selected: sel,
         selectedColor: AppTheme.orangeSurface,
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.cardBackground,
         onSelected: (_) => setState(() => _category = c),
       ),
     );
@@ -283,7 +283,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
           if (p.category.isNotEmpty && p.category != kCategoryNone) p.category,
           if (p.brand.isNotEmpty) p.brand,
         ].join(' · '),
-        style: const TextStyle(
+        style: TextStyle(
             fontSize: AppTheme.fontCaption, color: AppTheme.textSecondary),
       ),
       trailing: Row(
@@ -295,7 +295,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
             children: [
               Text(
                 '¥${fmtPrice(p.retailPrice)}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: AppTheme.fontCardTitle,
                   fontWeight: FontWeight.bold,
                   color: AppTheme.priceRed,
@@ -304,7 +304,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
               if (p.wholesalePrice > 0)
                 Text(
                   '批 ¥${fmtPrice(p.wholesalePrice)}',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: AppTheme.fontCaption,
                       color: AppTheme.textSecondary),
                 ),

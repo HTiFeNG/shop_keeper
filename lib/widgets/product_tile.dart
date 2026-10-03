@@ -167,7 +167,7 @@ class ProductTile extends StatelessWidget {
                     Row(
                       children: [
                         if (product.isFavorite)
-                          const Padding(
+                          Padding(
                             padding: EdgeInsets.only(right: 4),
                             child: Icon(Icons.star,
                                 size: 15, color: AppTheme.chartPeak),
@@ -200,7 +200,7 @@ class ProductTile extends StatelessWidget {
                       ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: AppTheme.fontCaption,
                           color: AppTheme.textSecondary),
                     ),
@@ -219,7 +219,7 @@ class ProductTile extends StatelessWidget {
                 children: [
                   Text(
                     '¥${fmtPrice(product.retailPrice)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: AppTheme.fontCardTitle,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.priceRed,
@@ -228,7 +228,7 @@ class ProductTile extends StatelessWidget {
                   if (product.wholesalePrice > 0)
                     Text(
                       '批 ¥${fmtPrice(product.wholesalePrice)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: AppTheme.fontCaption,
                         color: AppTheme.textSecondary,
                       ),
@@ -261,7 +261,7 @@ class ProductTile extends StatelessWidget {
                   ),
                 IconButton(
                   tooltip: '删除商品',
-                  icon: const Icon(Icons.delete_outline,
+                  icon: Icon(Icons.delete_outline,
                       size: 20, color: AppTheme.textSecondary),
                   onPressed: () => _confirmDelete(context),
                 ),

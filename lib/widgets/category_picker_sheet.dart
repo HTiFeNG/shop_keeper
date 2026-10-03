@@ -24,7 +24,7 @@ Future<String?> showCategoryPicker(
   return showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: Colors.white,
+    backgroundColor: AppTheme.cardBackground,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
     ),
@@ -96,7 +96,7 @@ class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
             ),
           ),
           if (!hasOptions)
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 12, 20, 20),
               child: Text('还没有分类，先新建一个吧', style: AppTheme.caption),
             )
@@ -116,7 +116,7 @@ class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
                 ),
               ),
             ),
-          const Divider(height: 1, color: AppTheme.divider),
+          Divider(height: 1, color: AppTheme.divider),
           _createRow(),
           const SizedBox(height: 4),
         ],

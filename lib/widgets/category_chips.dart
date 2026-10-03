@@ -108,7 +108,7 @@ class CategoryChips extends StatelessWidget {
           ),
           selected: sel,
           selectedColor: AppTheme.orangeSurface,
-          backgroundColor: Colors.white,
+          backgroundColor: AppTheme.cardBackground,
           showCheckmark: sel,
           onSelected: (_) => onSelect(name),
         ),

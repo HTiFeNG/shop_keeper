@@ -84,7 +84,7 @@ class _RootPageState extends State<RootPage> {
             final store = StoreService.instance;
             if (!store.ready) {
               // 首次加载数据时显示启动画面
-              return const Center(
+              return Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [

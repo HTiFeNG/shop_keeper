@@ -226,7 +226,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
             IconButton(
               tooltip: '删除商品',
               icon:
-                  const Icon(Icons.delete_outline, color: AppTheme.priceRed),
+                  Icon(Icons.delete_outline, color: AppTheme.priceRed),
               onPressed: _delete,
             ),
           TextButton(
@@ -415,12 +415,12 @@ class _ProductEditPageState extends State<ProductEditPage> {
         child: RichText(
           text: TextSpan(
             text: text,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: AppTheme.fontLabel,
                 color: AppTheme.textSecondary,
                 fontWeight: FontWeight.w500),
             children: required
-                ? const [
+                ? [
                     TextSpan(
                         text: ' *',
                         style: TextStyle(color: AppTheme.priceRed))
@@ -434,11 +434,11 @@ class _ProductEditPageState extends State<ProductEditPage> {
         children: [
           Text(label,
               style:
-                  const TextStyle(fontSize: AppTheme.fontLabel, color: AppTheme.textSecondary)),
+                  TextStyle(fontSize: AppTheme.fontLabel, color: AppTheme.textSecondary)),
           const Spacer(),
           Text(value,
               style:
-                  const TextStyle(fontSize: AppTheme.fontLabel, color: AppTheme.textSecondary)),
+                  TextStyle(fontSize: AppTheme.fontLabel, color: AppTheme.textSecondary)),
         ],
       );
 
@@ -450,11 +450,11 @@ class _ProductEditPageState extends State<ProductEditPage> {
             const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppTheme.divider),
+          borderSide: BorderSide(color: AppTheme.divider),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppTheme.divider),
+          borderSide: BorderSide(color: AppTheme.divider),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),

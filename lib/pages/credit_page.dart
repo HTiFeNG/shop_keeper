@@ -76,7 +76,7 @@ class _CreditPageState extends State<CreditPage> {
       width: double.infinity,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [AppTheme.totalGradientStart, AppTheme.totalGradientEnd],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -154,7 +154,7 @@ class _CreditPageState extends State<CreditPage> {
             const SizedBox(height: 10),
             Text(text, style: AppTheme.body),
             const SizedBox(height: 4),
-            const Text('点右下角「记一笔欠账」开始登记',
+            Text('点右下角「记一笔欠账」开始登记',
                 style: AppTheme.caption),
           ],
         ),
@@ -206,7 +206,7 @@ class _CreditPageState extends State<CreditPage> {
                   if (c.settled && c.settledDate != null) ...[
                     const SizedBox(height: 2),
                     Text('${du.dayLabel(c.settledDate!)} 已收',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: AppTheme.fontCaption,
                             color: AppTheme.success)),
                   ],
@@ -247,7 +247,7 @@ class _CreditPageState extends State<CreditPage> {
             ),
             PopupMenuButton<String>(
               tooltip: '更多',
-              icon: const Icon(Icons.more_vert,
+              icon: Icon(Icons.more_vert,
                   size: 20, color: AppTheme.textSecondary),
               onSelected: (v) {
                 if (v == 'edit') _openEditor(c);
@@ -294,7 +294,7 @@ class _CreditPageState extends State<CreditPage> {
                         fontSize: AppTheme.fontCardTitle, fontWeight: FontWeight.w600)),
               ),
               Text('¥${fmtPrice(g.total)}',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: AppTheme.fontSectionTitle,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.priceRed)),
@@ -514,7 +514,7 @@ class _CreditEditorState extends State<_CreditEditor> {
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppTheme.background,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -594,7 +594,7 @@ class _CreditEditorState extends State<_CreditEditor> {
                 if (_error != null) ...[
                   const SizedBox(height: 8),
                   Text(_error!,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppTheme.priceRed,
                           fontSize: AppTheme.fontCaption)),
                 ],

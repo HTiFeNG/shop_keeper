@@ -40,7 +40,7 @@ class FavoriteQuickBar extends StatelessWidget {
           color: AppTheme.orangeSurface,
           borderRadius: BorderRadius.circular(AppTheme.radiusCard),
         ),
-        child: const Text(
+        child: Text(
           '多记几笔账，常卖的商品会自动出现在这里，点一下就记一笔',
           style: TextStyle(
               fontSize: AppTheme.fontCaption, color: AppTheme.textPrimary),
@@ -60,7 +60,7 @@ class FavoriteQuickBar extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 starred ? '常用商品 · 点一下快速记账' : '最近常卖 · 点一下快速记账',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: AppTheme.fontCaption,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary),
@@ -92,7 +92,7 @@ class _FavoriteChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: AppTheme.cardBackground,
       borderRadius: BorderRadius.circular(AppTheme.radiusCard),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
@@ -112,14 +112,14 @@ class _FavoriteChip extends StatelessWidget {
                 product.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: AppTheme.fontCaption,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary),
               ),
               Text(
                 '¥${fmtPrice(product.retailPrice)}',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: AppTheme.fontCaption,
                     fontWeight: FontWeight.bold,
                     color: AppTheme.priceRed),

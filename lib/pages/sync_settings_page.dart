@@ -241,7 +241,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           border: Border.all(color: AppTheme.warningYellow),
         ),
-        child: const Row(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(Icons.info_outline, size: 20, color: AppTheme.primaryText),
@@ -297,7 +297,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           if (err != null) ...[
             const SizedBox(height: 4),
             Text(err,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: AppTheme.fontCaption,
                     color: AppTheme.priceRed)),
           ],
@@ -312,7 +312,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
                 Icon(Icons.help_outline, size: 20, color: AppTheme.primary),
                 SizedBox(width: 8),
@@ -327,7 +327,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               '生成后会显示一串密码，复制它，粘到下面的「应用密码」里',
             ]),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               '注意：这里要的是那串【应用密码】，不是你的坚果云登录密码。'
               '应用密码只给这个 App 用，随时可以在坚果云里删掉，更安全。',
               style: TextStyle(
@@ -355,7 +355,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     borderRadius: BorderRadius.circular(5),
                   ),
                   child: Text('${i + 1}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: AppTheme.fontMicro,
                           fontWeight: FontWeight.w700,
                           color: AppTheme.primaryText)),
@@ -375,7 +375,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('连接设置', style: AppTheme.sectionTitle),
+          Text('连接设置', style: AppTheme.sectionTitle),
           const SizedBox(height: 10),
           TextField(
             controller: _accountCtrl,
@@ -416,9 +416,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
             onChanged: (_) => _update(_currentConfig),
           ),
           const SizedBox(height: 4),
-          const Text('两台设备填一样的路径才能对上同一份数据',
+          Text('两台设备填一样的路径才能对上同一份数据',
               style: AppTheme.caption),
-          const Divider(height: 24, color: AppTheme.divider),
+          Divider(height: 24, color: AppTheme.divider),
           // SwitchListTile 内部是 ListTile，会把水波纹画到最近的 Material 上。
           // 卡片本身是带底色的 DecoratedBox，会挡住水波纹（Flutter 会直接
           // 抛断言），所以给它垫一层透明 Material。
@@ -430,7 +430,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               activeThumbColor: AppTheme.primary,
               title: const Text('启动时检查云端更新',
                   style: TextStyle(fontSize: AppTheme.fontBody)),
-              subtitle: const Text('只提示、不自动覆盖本机数据',
+              subtitle: Text('只提示、不自动覆盖本机数据',
                   style: AppTheme.caption),
               onChanged: (v) => _update(c.copyWith(autoSync: v)),
             ),
@@ -491,7 +491,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           ),
           if (!configured) ...[
             const SizedBox(height: 8),
-            const Text('填好账号和应用密码后即可使用',
+            Text('填好账号和应用密码后即可使用',
                 style: AppTheme.caption, textAlign: TextAlign.center),
           ],
         ],

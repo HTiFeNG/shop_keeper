@@ -45,7 +45,7 @@ class MonthlyChart extends StatelessWidget {
             drawVerticalLine: false,
             horizontalInterval: chartMaxY / 4,
             getDrawingHorizontalLine: (_) =>
-                const FlLine(color: AppTheme.divider, strokeWidth: 1),
+                FlLine(color: AppTheme.divider, strokeWidth: 1),
           ),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
@@ -62,7 +62,7 @@ class MonthlyChart extends StatelessWidget {
                   v >= 10000
                       ? '${(v / 10000).toStringAsFixed(1)}万'
                       : v.toStringAsFixed(0),
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: AppTheme.fontCaption,
                       color: AppTheme.textSecondary),
                 ),
@@ -88,7 +88,7 @@ class MonthlyChart extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       text,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: AppTheme.fontCaption,
                           color: AppTheme.textSecondary),
                     ),
@@ -99,13 +99,13 @@ class MonthlyChart extends StatelessWidget {
           ),
           barTouchData: BarTouchData(
             touchTooltipData: BarTouchTooltipData(
-              getTooltipColor: (_) => Colors.white,
-              tooltipBorder: const BorderSide(color: AppTheme.divider),
+              getTooltipColor: (_) => AppTheme.cardBackground,
+              tooltipBorder: BorderSide(color: AppTheme.divider),
               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                 final d = dailyData[group.x.toInt()];
                 return BarTooltipItem(
                   '${d.tooltipLabel ?? d.date}\n营业额 ${formatCurrency(d.revenue)}\n${d.productCount} 种 · ${d.totalQuantity} 件',
-                  const TextStyle(
+                  TextStyle(
                       fontSize: AppTheme.fontCaption,
                       color: AppTheme.textPrimary),
                 );

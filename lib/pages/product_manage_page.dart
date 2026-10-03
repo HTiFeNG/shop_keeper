@@ -587,7 +587,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
           else ...[
             PopupMenuButton<String>(
               tooltip: '数据备份与恢复',
-              icon: const Icon(Icons.backup_outlined,
+              icon: Icon(Icons.backup_outlined,
                   color: AppTheme.textSecondary),
               onSelected: (v) {
                 if (v == 'backup') _backup();
@@ -686,7 +686,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
               filtered
                   ? '换个词试试，或清空搜索 / 切回「全部」分类'
                   : '点右上角「新增」录入第一件商品',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: AppTheme.fontCaption,
                   color: AppTheme.textSecondary),
             ),
@@ -729,7 +729,7 @@ class _ProductManagePageState extends State<ProductManagePage> {
                           products.every((p) => _selectedIds.contains(p.id))
                               ? '取消全选'
                               : '全选',
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: AppTheme.fontLabel, color: AppTheme.primaryText),
                         ),
                       ],

@@ -57,7 +57,7 @@ class DateSelector extends StatelessWidget {
                   children: [
                     Text(
                       du.dayLabel(dateKey),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: AppTheme.fontSectionTitle,
                         fontWeight: FontWeight.w600,
                         color: AppTheme.textPrimary,

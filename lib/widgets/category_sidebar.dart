@@ -62,7 +62,7 @@ class CategorySidebar extends StatelessWidget {
               width: double.infinity,
               constraints: const BoxConstraints(minHeight: 48),
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: const Column(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.add, size: 18, color: AppTheme.primary),
@@ -90,7 +90,7 @@ class CategorySidebar extends StatelessWidget {
                 width: double.infinity,
                 constraints: const BoxConstraints(minHeight: 48),
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                child: const Column(
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.tune, size: 18, color: AppTheme.primary),

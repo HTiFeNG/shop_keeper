@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色模式下的启动底色（系统处于深色时生效）。
+         与 Flutter 端 AppTheme 的深色底一致（_darkBackground = #1A1816），
+         避免深色下开 App 先闪一下白屏。
+
+         launch_background.xml 直接引用 @color/app_background，
+         所以这里覆盖同名的 color 就够了，不必改 drawable。 -->
+    <color name="app_background">#1A1816</color>
+</resources>
