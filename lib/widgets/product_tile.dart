@@ -246,18 +246,34 @@ class ProductTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // 中：零售价
+                  // 中：零售价。
                   //
-                  // 批发价不再显示 —— 它是「编辑商品时看一眼」的信息，不该占
-                  // 列表每一行的位置。需要时进编辑页即可。
-                  Text(
-                    '¥${fmtPrice(product.retailPrice)}',
-                    style: TextStyle(
-                      fontSize: AppTheme.fontCardTitle,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.priceRed,
+                  // **定宽 + 右对齐**，让列表里所有商品的价格竖直成列 —— 否则
+                  // ¥2.00 和 ¥1,234.50 长短不同，价格的左边界会左右乱跳，下面
+                  // 那排按钮也跟着歪，整列看上去就不齐。
+                  // （批发价已不在这里显示，需要时进编辑页看。）
+                  SizedBox(
+                    // 80dp 放得下 ¥1,234.50（10 字符 16px 粗体约 75dp）
+                    width: 80,
+                    child: FittedBox(
+                      // 兜底：真出现超长价格时缩字号，不横向溢出
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '¥${fmtPrice(product.retailPrice)}',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: AppTheme.fontCardTitle,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.priceRed,
+                        ),
+                      ),
                     ),
                   ),
+                  // 价格与按钮之间也留 8dp。加上 IconButton 自带的 8dp 内边距，
+                  // 视觉间距与「两个按钮之间」一致 —— 之前这里是 0，
+                  // 价格紧贴着按钮，三个元素疏密不均，看着就乱。
+                  const SizedBox(width: 8),
                   // 右：记一笔 + 删除（批量模式下隐藏）
                   //
                   // 星标按钮已去掉：首页「最近常卖」是按销量自动生成的，并不依赖
