@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import 'brand_tag.dart';
 
-/// 商品列表项：商品名、条码 · 品牌、**可点分类标签**、红色零售价、星标、「记一笔」。
+/// 商品列表项：商品名、**品牌标签**、**可点分类标签**、红色零售价、条码、星标、「记一笔」。
 ///
 /// - 点击整行 → 编辑；垃圾桶 → 删除（带确认）；
 /// - **点分类标签 → 直接弹分类选择面板**（不必再进批量模式，见 [onChangeCategory]）；
@@ -137,6 +138,39 @@ class ProductTile extends StatelessWidget {
     );
   }
 
+  /// 条码独占一整行（放在卡片底部）。
+  ///
+  /// 为什么从左侧那一列搬出来：那列在 360dp 屏上只有约 100dp 可用
+  /// （右侧三个 48dp 图标按钮吃掉 144dp），而「条码：<13 位>」要约 130dp
+  /// —— 13 位条码**永远显示不全**，被省略号截成 `条码：6901…`。
+  /// 条码是核对商品的主要凭据，看不全等于没有。移到整行宽度（约 330dp）后
+  /// 绰绰有余，13 位数字还能再加上字距，更好认。
+  ///
+  /// 没填条码时整行不渲染（调用方判断），不占位置 —— 「还没填条码」这件事
+  /// 在编辑页一眼能看到，列表里没必要留一行“条码：—”。
+  Widget _barcodeRow() {
+    return Row(
+      children: [
+        Icon(Icons.qr_code_2, size: 14, color: AppTheme.textSecondary),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            product.barcode,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: AppTheme.fontCaption,
+              color: AppTheme.textSecondary,
+              // 数字间略微放开：13 位连在一起的数字很容易看串行，
+              // 加一点字距才好逐位核对
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -147,124 +181,140 @@ class ProductTile extends StatelessWidget {
         onTap: _batchMode ? onSelectToggle : onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_batchMode) ...[
-                Icon(
-                  selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                  size: 22,
-                  color: selected
-                      ? AppTheme.primary
-                      : AppTheme.textSecondary,
-                ),
-                const SizedBox(width: 10),
-              ],
-              // 左：名称（含星标）/ 条码 / 品牌类别
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              // 主行：名称 / 品牌 + 分类标签 | 价格 | 三个操作按钮
+              Row(
+                children: [
+                  if (_batchMode) ...[
+                    Icon(
+                      selected
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 22,
+                      color:
+                          selected ? AppTheme.primary : AppTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  // 左：名称（含星标）/ 品牌 + 分类标签
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (product.isFavorite)
-                          Padding(
-                            padding: EdgeInsets.only(right: 4),
-                            child: Icon(Icons.star,
-                                size: 15, color: AppTheme.chartPeak),
-                          ),
-                        Expanded(
-                          child: Text(
-                            product.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: AppTheme.fontBody, fontWeight: FontWeight.w600),
-                          ),
+                        Row(
+                          children: [
+                            if (product.isFavorite)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: Icon(Icons.star,
+                                    size: 15, color: AppTheme.chartPeak),
+                              ),
+                            Expanded(
+                              child: Text(
+                                product.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: AppTheme.fontBody,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
                         ),
+                        // 品牌 + 分类标签同一行，用 Wrap 让它俩放不下时自动换行。
+                        //
+                        // 这一侧在 360dp 屏上只有约 100dp 可用，两个标签
+                        // （品牌上限 96 + 分类上限 52）硬并排必然溢出 ——
+                        // 组件测试里实测溢出 24px。Wrap 自动换行，两种标签
+                        // 都能完整显示，代价只是极窄屏上多占一行。
+                        if (product.brand.isNotEmpty ||
+                            product.category.isNotEmpty ||
+                            _categoryTappable) ...[
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (product.brand.isNotEmpty)
+                                // 上限 96dp 与营业额明细行一致，品牌名过长时
+                                // 先在标签内部省略，不会把整行撑爆
+                                ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 96),
+                                  child: BrandTag(product.brand),
+                                ),
+                              if (product.category.isNotEmpty ||
+                                  _categoryTappable)
+                                _categoryChip(),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    // 条码 + 品牌合成一行纯文本。
-                    //
-                    // 品牌**没有**在这里做成标签：360dp 屏上这一侧只有约 100dp
-                    // 可用宽度（右侧三个 48dp 图标按钮吃掉了 144dp），
-                    // 「品牌标签 + 分类标签」并排必然溢出 —— 组件测试里实测
-                    // 溢出 24px。合成一行 + 省略号才是稳的。
-                    Text(
-                      [
-                        if (product.barcode.isEmpty)
-                          '条码：—'
-                        else
-                          '条码：${product.barcode}',
-                        if (product.brand.isNotEmpty) product.brand,
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: AppTheme.fontCaption,
-                          color: AppTheme.textSecondary),
-                    ),
-                    // 分类标签独占一行 —— 它是可点的，别跟别的文字抢空间
-                    if (product.category.isNotEmpty || _categoryTappable) ...[
-                      const SizedBox(height: 4),
-                      _categoryChip(),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // 中：零售价（＋批发价，填过才显示）
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '¥${fmtPrice(product.retailPrice)}',
-                    style: TextStyle(
-                      fontSize: AppTheme.fontCardTitle,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.priceRed,
-                    ),
                   ),
-                  if (product.wholesalePrice > 0)
-                    Text(
-                      '批 ¥${fmtPrice(product.wholesalePrice)}',
-                      style: TextStyle(
-                        fontSize: AppTheme.fontCaption,
-                        color: AppTheme.textSecondary,
+                  const SizedBox(width: 8),
+                  // 中：零售价（＋批发价，填过才显示）
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '¥${fmtPrice(product.retailPrice)}',
+                        style: TextStyle(
+                          fontSize: AppTheme.fontCardTitle,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.priceRed,
+                        ),
                       ),
+                      if (product.wholesalePrice > 0)
+                        Text(
+                          '批 ¥${fmtPrice(product.wholesalePrice)}',
+                          style: TextStyle(
+                            fontSize: AppTheme.fontCaption,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                  // 右：星标 + 记一笔 + 删除（批量模式下隐藏）
+                  if (!_batchMode) ...[
+                    if (onToggleFavorite != null)
+                      IconButton(
+                        tooltip: product.isFavorite ? '取消常用' : '设为常用',
+                        icon: Icon(
+                          product.isFavorite ? Icons.star : Icons.star_border,
+                          size: 22,
+                          color: product.isFavorite
+                              ? AppTheme.chartPeak
+                              : AppTheme.textSecondary,
+                        ),
+                        onPressed: onToggleFavorite,
+                      ),
+                    if (onQuickSale != null)
+                      IconButton(
+                        tooltip: '记一笔销售',
+                        style: IconButton.styleFrom(
+                          backgroundColor: AppTheme.orangeSurface,
+                          foregroundColor: AppTheme.primary,
+                        ),
+                        icon: const Icon(Icons.point_of_sale, size: 20),
+                        onPressed: onQuickSale,
+                      ),
+                    IconButton(
+                      tooltip: '删除商品',
+                      icon: Icon(Icons.delete_outline,
+                          size: 20, color: AppTheme.textSecondary),
+                      onPressed: () => _confirmDelete(context),
                     ),
+                  ],
                 ],
               ),
-              // 右：星标 + 记一笔 + 删除（批量模式下隐藏）
-              if (!_batchMode) ...[
-                if (onToggleFavorite != null)
-                  IconButton(
-                    tooltip: product.isFavorite ? '取消常用' : '设为常用',
-                    icon: Icon(
-                      product.isFavorite ? Icons.star : Icons.star_border,
-                      size: 22,
-                      color: product.isFavorite
-                          ? AppTheme.chartPeak
-                          : AppTheme.textSecondary,
-                    ),
-                    onPressed: onToggleFavorite,
-                  ),
-                if (onQuickSale != null)
-                  IconButton(
-                    tooltip: '记一笔销售',
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppTheme.orangeSurface,
-                      foregroundColor: AppTheme.primary,
-                    ),
-                    icon: const Icon(Icons.point_of_sale, size: 20),
-                    onPressed: onQuickSale,
-                  ),
-                IconButton(
-                  tooltip: '删除商品',
-                  icon: Icon(Icons.delete_outline,
-                      size: 20, color: AppTheme.textSecondary),
-                  onPressed: () => _confirmDelete(context),
-                ),
+              // 底部：条码（未填则不占位置）
+              if (product.barcode.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                _barcodeRow(),
               ],
             ],
           ),

@@ -532,8 +532,14 @@ void main() {
           of: find.byType(SaleItemCard), matching: find.text('矿泉水')),
       findsOneWidget,
     );
-    expect(find.text('农夫山泉'), findsOneWidget,
-        reason: '老明细没有品牌快照，也要能按 productId 回查显示出来');
+    // 限定在明细卡片内：商品页在同一个 IndexedStack 里（各 Tab 都会被构建），
+    // 它也有一份商品品牌标签，不限定范围 find.text 会数到 2 个。
+    expect(
+      find.descendant(
+          of: find.byType(SaleItemCard), matching: find.text('农夫山泉')),
+      findsOneWidget,
+      reason: '老明细没有品牌快照，也要能按 productId 回查显示出来',
+    );
     expect(tester.takeException(), isNull);
   });
 }

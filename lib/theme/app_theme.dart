@@ -190,8 +190,9 @@ abstract final class AppTheme {
 
   /// 更小的补充说明。
   ///
-  /// ⚠️ 低于本类约定的 13px 下限，仅用于扫码页这类深色底上的次要文字 ——
-  /// 新增界面不要用它，请直接用 [fontCaption]。
+  /// ⚠️ 低于本类约定的 13px 下限，只在「空间真的不够」的地方用：
+  /// 扫码页深色底上的次要文字、首页常用商品栏的紧凑 chip（40dp 高要塞两行）。
+  /// 新增界面默认请用 [fontCaption]。
   static const double fontSmall = 12;
   static const double fontMicro = 11;
 

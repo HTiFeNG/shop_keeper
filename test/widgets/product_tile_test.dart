@@ -1,7 +1,9 @@
-// 商品列表项：品牌的呈现方式、可直接点的分类入口、批量模式下的行为差异。
+// 商品列表项：品牌的呈现方式、条码完整性、可直接点的分类入口、批量模式下的行为差异。
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shop_keeper/models/product.dart';
+import 'package:shop_keeper/widgets/brand_tag.dart';
 import 'package:shop_keeper/widgets/product_tile.dart';
 
 import '../helpers/store_test_env.dart';
@@ -30,24 +32,69 @@ void main() {
     ));
   }
 
-  testWidgets('品牌跟在条码同一行显示', (tester) async {
+  testWidgets('品牌以独立标签显示，不再被长条码挤掉', (tester) async {
     await pumpTile(
       tester,
       product: Product(
-          id: 'SP0001', name: '矿泉水', brand: '农夫山泉', retailPrice: 2),
+        id: 'SP0001',
+        name: '矿泉水',
+        brand: '农夫山泉',
+        barcode: '6901234567890',
+        retailPrice: 2,
+      ),
     );
     expect(find.text('矿泉水'), findsOneWidget);
-    // 品牌**不是**独立标签：这一列在 360dp 屏上只有约 100dp，
-    // 品牌 + 分类两个标签并排会直接溢出 24px。它并进「条码 · 品牌」一行。
-    expect(find.textContaining('农夫山泉'), findsOneWidget);
+    expect(find.byType(BrandTag), findsOneWidget);
+    expect(find.text('农夫山泉'), findsOneWidget);
+    // 回归点：品牌以前是拼在「条码：<13 位>」后面的纯文本，而这一列在
+    // 360dp 屏上只有约 100dp —— 条码自己就占满了，品牌永远被省略号吃掉。
+    // 现在条码独占一整行，可以完整显示。
+    expect(find.text('6901234567890'), findsOneWidget);
   });
 
-  testWidgets('没有品牌时那一行只显示条码，不会多出空位', (tester) async {
+  testWidgets('品牌与分类同时存在：Wrap 自动换行，不溢出', (tester) async {
+    await pumpTile(
+      tester,
+      product: Product(
+        id: 'SP0001',
+        name: '矿泉水',
+        brand: '农夫山泉',
+        category: '饮料',
+        retailPrice: 2,
+      ),
+      onChangeCategory: () {},
+    );
+    // 两个标签在 360dp 上并排放不下（品牌上限 96 + 分类上限 52 > 可用约 100dp）
+    // —— 靠 Wrap 换行化解，绝不能让布局报溢出（旧方案就是在这里溢出的）
+    expect(tester.takeException(), isNull);
+    expect(find.text('农夫山泉'), findsOneWidget);
+    expect(find.text('饮料'), findsOneWidget);
+  });
+
+  testWidgets('没填条码时不显示条码行，不占位置', (tester) async {
     await pumpTile(
       tester,
       product: Product(id: 'SP0001', name: '矿泉水', retailPrice: 2),
     );
-    expect(find.text('条码：—'), findsOneWidget);
+    expect(find.byIcon(Icons.qr_code_2), findsNothing);
+  });
+
+  testWidgets('13 位条码完整显示，不被省略号截断', (tester) async {
+    await pumpTile(
+      tester,
+      product: Product(
+        id: 'SP0001',
+        name: '矿泉水',
+        barcode: '6901234567890',
+        retailPrice: 2,
+      ),
+    );
+    // 这是本次修复的核心断言：条码此前挤在左列（360dp 屏上约 100dp），
+    // 而「条码：<13 位>」自身要约 130dp，永远被截成「条码：6901…」。
+    final para =
+        tester.renderObject<RenderParagraph>(find.text('6901234567890'));
+    expect(para.didExceedMaxLines, isFalse,
+        reason: '条码独占整行后，13 位数字必须完整显示');
   });
 
   testWidgets('点分类标签直接触发改分类（不必先进批量模式）', (tester) async {

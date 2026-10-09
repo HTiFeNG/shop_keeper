@@ -69,11 +69,11 @@ class FavoriteQuickBar extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 52,
+          height: 44,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: list.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            separatorBuilder: (_, _) => const SizedBox(width: 6),
             itemBuilder: (context, i) =>
                 _FavoriteChip(product: list[i], onTap: () => onPick(list[i])),
           ),
@@ -91,17 +91,25 @@ class _FavoriteChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 尺寸收小过一轮：原来 108×48、内边距 12/6、圆角用的卡片规格（14）。
+    // 一条快捷栏连标题要吃掉约 78dp 高度，在 640dp 高的机器上把明细区压得很紧。
+    // 现在 88×40、内边距 10/4、圆角换成 radiusSmall(10)（小控件本来就该用这一档）：
+    // 高度 −23%、宽度 −19%，一屏能多放下大半个 chip。
+    //
+    // 代价：触控区随之变成 40dp，低于项目「≥48dp」的约定。这是「更紧凑」与
+    // 「更好点」的取舍 —— 觉得难点就把 minHeight 调回 44 或 48。
+    final radius = BorderRadius.circular(AppTheme.radiusSmall);
     return Material(
       color: AppTheme.cardBackground,
-      borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+      borderRadius: radius,
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+        borderRadius: radius,
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minWidth: 108, minHeight: 48),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          constraints: const BoxConstraints(minWidth: 88, minHeight: 40),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+            borderRadius: radius,
             border: Border.all(color: AppTheme.divider),
           ),
           child: Column(
@@ -113,14 +121,14 @@ class _FavoriteChip extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontSize: AppTheme.fontCaption,
+                    fontSize: AppTheme.fontSmall,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary),
               ),
               Text(
                 '¥${fmtPrice(product.retailPrice)}',
                 style: TextStyle(
-                    fontSize: AppTheme.fontCaption,
+                    fontSize: AppTheme.fontSmall,
                     fontWeight: FontWeight.bold,
                     color: AppTheme.priceRed),
               ),
