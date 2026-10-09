@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
-import 'brand_tag.dart';
 
 /// 商品列表项：商品名、**品牌标签**、**可点分类标签**、红色零售价、条码、星标、「记一笔」。
 ///
@@ -68,28 +67,39 @@ class ProductTile extends StatelessWidget {
     if (ok == true) onDelete();
   }
 
-  /// 可点的分类标签。
+  /// 商品行里「小标签」的统一容器。
   ///
-  /// 这是本次「简化分类操作」的核心：以前换分类必须先进批量模式勾选商品，
-  /// 现在分类本身就是个按钮，点一下直接出选择面板，两次点击搞定。
-  /// 视觉高度只有 32dp（不然会把商品行撑得很松），但外层垫到 32dp 的命中区；
-  /// 误触的代价只是弹出一个选择面板，不会改坏数据。
-  Widget _categoryChip() {
-    final has = product.category.isNotEmpty;
-    final label = has ? product.category : '未分类';
+  /// 品牌标签和分类标签在行内是**并排站着的一对**，规格必须完全一致
+  /// （高度 / 内边距 / 圆角 / 字号 / 图标尺寸）—— 差一点就能看出「一大一小」。
+  /// 这和营业额明细行把品牌标签与价签统一到 `kTag*` 是同一个道理，
+  /// 所以两者都从这里出，不各写各的。
+  ///
+  /// 注：这里**不**复用 `BrandTag` —— 那是为明细行设计的（21dp 高，和价签配对）；
+  /// 商品页的标签要和「可点的分类标签」等高，两边的参照物不同。
+  Widget _tag({
+    required IconData icon,
+    required String label,
+    required bool highlight,
+    VoidCallback? onTap,
+    bool showArrow = false,
+    double maxLabelWidth = 52,
+  }) {
+    final fg = highlight ? AppTheme.primaryText : AppTheme.textSecondary;
     return Material(
-      color: has ? AppTheme.orangeSurface : Colors.transparent,
+      color: highlight ? AppTheme.orangeSurface : Colors.transparent,
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
-        onTap: _categoryTappable ? onChangeCategory : null,
+        onTap: onTap,
         child: Container(
+          // key 供组件测试按标签取尺寸用（验证两个标签等高）
+          key: ValueKey('tag-$label'),
           constraints: const BoxConstraints(minHeight: 32),
           padding: const EdgeInsets.symmetric(horizontal: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: has
+              color: highlight
                   ? AppTheme.primary.withValues(alpha: 0.28)
                   : AppTheme.divider,
             ),
@@ -97,39 +107,26 @@ class ProductTile extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                has ? Icons.folder_outlined : Icons.folder_off_outlined,
-                size: 14,
-                color: has ? AppTheme.primaryText : AppTheme.textSecondary,
-              ),
+              Icon(icon, size: 14, color: fg),
               const SizedBox(width: 4),
               // 外面套 Flexible 才是防溢出的关键：这一行在 360dp 屏上只有
-              // 约 100dp 可用，空间不够时先让文字收缩（省略号），标签本身
+              // 约 90dp 可用，空间不够时先让文字收缩（省略号），标签本身
               // 绝不被顶出边界。
-              // 外层 Column 的 crossAxisAlignment 给的是「0..可用宽」这个
-              // **有界**约束，所以这里的 Flexible 合法（无界约束下会抛异常）。
               Flexible(
                 child: ConstrainedBox(
-                  // 上限 52 ≈ 4 个汉字，避免分类名太长时把标签撑得很宽
-                  constraints: const BoxConstraints(maxWidth: 52),
+                  constraints: BoxConstraints(maxWidth: maxLabelWidth),
                   child: Text(
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: AppTheme.fontSmall,
-                      color:
-                          has ? AppTheme.primaryText : AppTheme.textSecondary,
-                    ),
+                    style: TextStyle(fontSize: AppTheme.fontSmall, color: fg),
                   ),
                 ),
               ),
-              if (_categoryTappable) ...[
+              if (showArrow) ...[
                 const SizedBox(width: 2),
                 // 小箭头是「这里能点」的视觉暗示；不可点时干脆不画
-                Icon(Icons.arrow_drop_down,
-                    size: 14,
-                    color: has ? AppTheme.primaryText : AppTheme.textSecondary),
+                Icon(Icons.arrow_drop_down, size: 14, color: fg),
               ],
             ],
           ),
@@ -138,22 +135,52 @@ class ProductTile extends StatelessWidget {
     );
   }
 
-  /// 条码独占一整行（放在卡片底部）。
+  /// 品牌标签（不可点，纯展示）。
   ///
-  /// 为什么从左侧那一列搬出来：那列在 360dp 屏上只有约 100dp 可用
-  /// （右侧三个 48dp 图标按钮吃掉 144dp），而「条码：<13 位>」要约 130dp
-  /// —— 13 位条码**永远显示不全**，被省略号截成 `条码：6901…`。
-  /// 条码是核对商品的主要凭据，看不全等于没有。移到整行宽度（约 330dp）后
-  /// 绰绰有余，13 位数字还能再加上字距，更好认。
+  /// 存在的意义：让「农夫山泉 矿泉水」和「娃哈哈 矿泉水」一眼分得开。
+  Widget _brandChip() => _tag(
+        icon: Icons.local_offer_outlined,
+        label: product.brand,
+        highlight: true,
+        // 上限 96dp 与营业额明细行一致，品牌名过长时先在标签内部省略
+        maxLabelWidth: 96,
+      );
+
+  /// 分类标签。
   ///
-  /// 没填条码时整行不渲染（调用方判断），不占位置 —— 「还没填条码」这件事
-  /// 在编辑页一眼能看到，列表里没必要留一行“条码：—”。
+  /// 这是「简化分类操作」的核心：以前换分类必须先进批量模式勾选商品，
+  /// 现在分类本身就是个按钮，点一下直接出选择面板，两次点击搞定。
+  /// 误触的代价只是弹出一个选择面板，不会改坏数据。
+  Widget _categoryChip() {
+    final has = product.category.isNotEmpty;
+    return _tag(
+      icon: has ? Icons.folder_outlined : Icons.folder_off_outlined,
+      label: has ? product.category : '未分类',
+      highlight: has,
+      onTap: _categoryTappable ? onChangeCategory : null,
+      // 批量模式下整行都是「选中」语义，不能再叠改分类
+      showArrow: _categoryTappable,
+    );
+  }
+
+  /// 条码：贴在卡片右下角，与「价格 / 按钮」那一列右对齐。
+  ///
+  /// 两个考虑：
+  /// 1. **不能留在左侧那一列** —— 那列在 360dp 屏上只有约 90dp 可用
+  ///    （右侧三个 48dp 图标按钮吃掉 144dp），而 13 位条码自己就要约 91dp，
+  ///    永远被省略号截成 `6901…`。条码是核对商品的主要凭据，看不全等于没有。
+  /// 2. **也不靠左占满一整行** —— 那样右边会留一大片空白，卡片显得松散。
+  ///    右对齐后它正好落在价格和按钮下方，左侧整片空间留给名称与标签。
+  ///
+  /// 没填条码时整行不渲染（调用方判断），不占位置。
   Widget _barcodeRow() {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
       children: [
         Icon(Icons.qr_code_2, size: 14, color: AppTheme.textSecondary),
         const SizedBox(width: 6),
-        Expanded(
+        // 兜底：条码异常长时不横向溢出（正常 13 位远用不到）
+        Flexible(
           child: Text(
             product.barcode,
             maxLines: 1,
@@ -238,14 +265,7 @@ class ProductTile extends StatelessWidget {
                             runSpacing: 4,
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              if (product.brand.isNotEmpty)
-                                // 上限 96dp 与营业额明细行一致，品牌名过长时
-                                // 先在标签内部省略，不会把整行撑爆
-                                ConstrainedBox(
-                                  constraints:
-                                      const BoxConstraints(maxWidth: 96),
-                                  child: BrandTag(product.brand),
-                                ),
+                              if (product.brand.isNotEmpty) _brandChip(),
                               if (product.category.isNotEmpty ||
                                   _categoryTappable)
                                 _categoryChip(),

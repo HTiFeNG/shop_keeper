@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shop_keeper/models/product.dart';
-import 'package:shop_keeper/widgets/brand_tag.dart';
 import 'package:shop_keeper/widgets/product_tile.dart';
 
 import '../helpers/store_test_env.dart';
@@ -44,7 +43,6 @@ void main() {
       ),
     );
     expect(find.text('矿泉水'), findsOneWidget);
-    expect(find.byType(BrandTag), findsOneWidget);
     expect(find.text('农夫山泉'), findsOneWidget);
     // 回归点：品牌以前是拼在「条码：<13 位>」后面的纯文本，而这一列在
     // 360dp 屏上只有约 100dp —— 条码自己就占满了，品牌永远被省略号吃掉。
@@ -69,6 +67,27 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('农夫山泉'), findsOneWidget);
     expect(find.text('饮料'), findsOneWidget);
+  });
+
+  testWidgets('品牌标签与分类标签尺寸一致（不能一大一小）', (tester) async {
+    await pumpTile(
+      tester,
+      product: Product(
+        id: 'SP0001',
+        name: '矿泉水',
+        brand: '农夫山泉',
+        category: '饮料',
+        retailPrice: 2,
+      ),
+      onChangeCategory: () {},
+    );
+    // 用户实际用过后反馈的问题：品牌标签当时是 21dp 高的 BrandTag，而分类标签
+    // 是 32dp 高的自绘容器 —— 并排站着就是一大一小。现在两者共用同一个 _tag
+    // 容器（同高 / 同内边距 / 同圆角 / 同字号 / 同图标尺寸），必须严格等高。
+    final brand = tester.getSize(find.byKey(const ValueKey('tag-农夫山泉')));
+    final category = tester.getSize(find.byKey(const ValueKey('tag-饮料')));
+    expect(brand.height, category.height,
+        reason: '两个标签并排显示，高度必须完全一致');
   });
 
   testWidgets('没填条码时不显示条码行，不占位置', (tester) async {
