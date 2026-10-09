@@ -50,7 +50,7 @@ void main() {
     expect(find.text('6901234567890'), findsOneWidget);
   });
 
-  testWidgets('品牌与分类同时存在：Wrap 自动换行，不溢出', (tester) async {
+  testWidgets('品牌与分类同时存在：并排显示，不溢出', (tester) async {
     await pumpTile(
       tester,
       product: Product(
@@ -62,8 +62,8 @@ void main() {
       ),
       onChangeCategory: () {},
     );
-    // 两个标签在 360dp 上并排放不下（品牌上限 96 + 分类上限 52 > 可用约 100dp）
-    // —— 靠 Wrap 换行化解，绝不能让布局报溢出（旧方案就是在这里溢出的）
+    // 标签现在独占第二行（整行宽），两者能并排放下 —— 之前挤在第一行时
+    // 只有约 90dp 可用，必然换行甚至溢出（组件测试里实测溢出过 24px）
     expect(tester.takeException(), isNull);
     expect(find.text('农夫山泉'), findsOneWidget);
     expect(find.text('饮料'), findsOneWidget);

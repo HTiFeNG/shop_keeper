@@ -748,8 +748,6 @@ class _ProductManagePageState extends State<ProductManagePage> {
               onTap: () => _openEdit(products[i]),
               onDelete: () => store.deleteProduct(products[i].id),
               onQuickSale: () => store.requestPrefill(products[i].id),
-              // 直接在列表里加星：不必进编辑页，否则「一键记账」很难被发现
-              onToggleFavorite: () => store.toggleFavorite(products[i].id),
               // 点分类标签直接改分类，不必再进批量模式
               onChangeCategory: () => _changeCategory(products[i]),
               selected: _selectedIds.contains(products[i].id),

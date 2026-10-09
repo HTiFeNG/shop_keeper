@@ -155,6 +155,20 @@ class _ProductEditPageState extends State<ProductEditPage> {
 
   // ---------------- 删除（仅编辑模式） ----------------
 
+  /// 「记一笔销售」：把该商品预填到首页今天的一行里，并回到首页。
+  ///
+  /// 用的是**已保存**的商品信息（名称 / 零售价），不是表单里还没保存的改动。
+  /// 若表单有未保存的改动，`maybePop` 会走 PopScope 那条「还没保存」提醒 ——
+  /// 那是对的，不该让用户以为改动已经生效。
+  ///
+  /// 不用自己切 Tab：RootPage 监听着 `salePrefill`，一有值就切到首页。
+  void _quickSale() {
+    final p = widget.product;
+    if (p == null) return;
+    store.requestPrefill(p.id);
+    Navigator.of(context).maybePop();
+  }
+
   Future<void> _delete() async {
     final p = widget.product!;
     final ok = await showDialog<bool>(
@@ -241,6 +255,20 @@ class _ProductEditPageState extends State<ProductEditPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // 编辑已有商品时给一个显眼的「记一笔」入口。
+            // 放在最上面而不是塞进 AppBar：那边已经有删除 + 保存两个动作，
+            // 再加会很挤；整宽按钮一眼就能看到。
+            if (isEdit) ...[
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _quickSale,
+                  icon: const Icon(Icons.point_of_sale, size: 20),
+                  label: const Text('记一笔销售'),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             _card(children: [
               _readonlyRow('编号',
                   isEdit ? widget.product!.id : '${store.peekNextId()}（自动生成）'),
