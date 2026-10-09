@@ -192,6 +192,36 @@ class ProductTile extends StatelessWidget {
     );
   }
 
+  /// 行尾操作按钮：统一 48×48 圆角块、图标 20 居中。
+  ///
+  /// 为什么不直接用裸 `IconButton` —— 它默认带 8dp 内边距，于是「有背景色」的
+  /// 按钮可见边界是 36dp 的圆、「没背景色」的只剩 20dp 的图标，两者差了 8dp。
+  /// 结果「价格 → 记一笔」的视觉间距是 14dp、「记一笔 → 删除」是 20dp，怎么摆
+  /// 都不均匀。统一成同尺寸的实心块之后，间距完全由外面的 SizedBox 决定。
+  Widget _actionBtn({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+    bool highlight = false,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+      style: IconButton.styleFrom(
+        // 删除也用极淡的底色：不给底色的话它的可见边界只有 20dp 的图标，
+        // 和旁边 48dp 的实心块并排，间距看着又会不均。
+        // （主次仍然分得开：记一笔是橙底橙图标，删除是灰底灰图标。）
+        backgroundColor: highlight ? AppTheme.orangeSurface : AppTheme.divider,
+        foregroundColor:
+            highlight ? AppTheme.primary : AppTheme.textSecondary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      icon: Icon(icon, size: 20),
+      onPressed: onPressed,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -245,7 +275,10 @@ class ProductTile extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  // 价格与按钮之间、按钮彼此之间统一留 10dp —— 三者的视觉间距
+                  // 因此完全一致（此前「价格→记一笔」是 14dp、「记一笔→删除」是
+                  // 20dp，因为两种按钮的可见边界差了 8dp）。
+                  const SizedBox(width: 10),
                   // 中：零售价。
                   //
                   // **定宽 + 右对齐**，让列表里所有商品的价格竖直成列 —— 否则
@@ -270,30 +303,25 @@ class ProductTile extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // 价格与按钮之间也留 8dp。加上 IconButton 自带的 8dp 内边距，
-                  // 视觉间距与「两个按钮之间」一致 —— 之前这里是 0，
-                  // 价格紧贴着按钮，三个元素疏密不均，看着就乱。
-                  const SizedBox(width: 8),
                   // 右：记一笔 + 删除（批量模式下隐藏）
                   //
                   // 星标按钮已去掉：首页「最近常卖」是按销量自动生成的，并不依赖
                   // 手工加星 —— 那个按钮挤占的宽度比它的用处大得多，去掉后商品名
                   // 和标签都宽松了。要设常用时进编辑页。
                   if (!_batchMode) ...[
-                    if (onQuickSale != null)
-                      IconButton(
+                    if (onQuickSale != null) ...[
+                      const SizedBox(width: 10),
+                      _actionBtn(
+                        icon: Icons.point_of_sale,
                         tooltip: '记一笔销售',
-                        style: IconButton.styleFrom(
-                          backgroundColor: AppTheme.orangeSurface,
-                          foregroundColor: AppTheme.primary,
-                        ),
-                        icon: const Icon(Icons.point_of_sale, size: 20),
-                        onPressed: onQuickSale,
+                        highlight: true,
+                        onPressed: onQuickSale!,
                       ),
-                    IconButton(
+                    ],
+                    const SizedBox(width: 10),
+                    _actionBtn(
+                      icon: Icons.delete_outline,
                       tooltip: '删除商品',
-                      icon: Icon(Icons.delete_outline,
-                          size: 20, color: AppTheme.textSecondary),
                       onPressed: () => _confirmDelete(context),
                     ),
                   ],

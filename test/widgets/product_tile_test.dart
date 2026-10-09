@@ -13,6 +13,7 @@ void main() {
     required Product product,
     VoidCallback? onChangeCategory,
     VoidCallback? onSelectToggle,
+    VoidCallback? onQuickSale,
   }) async {
     // 用 360×640 的真实小屏。默认测试视口是 800×600，比真机宽得多，
     // 会**掩盖**商品行右侧空间不足导致的溢出 —— 这个坑真的漏过一次
@@ -26,6 +27,7 @@ void main() {
           onDelete: () {},
           onChangeCategory: onChangeCategory,
           onSelectToggle: onSelectToggle,
+          onQuickSale: onQuickSale,
         ),
       ),
     ));
@@ -90,12 +92,28 @@ void main() {
         reason: '两个标签并排显示，高度必须完全一致');
   });
 
-  testWidgets('没填条码时不显示条码行，不占位置', (tester) async {
-    await pumpTile(
+  testWidgets('没填条码时不显示条码行，不占位置', (tester) async {    await pumpTile(
       tester,
       product: Product(id: 'SP0001', name: '矿泉水', retailPrice: 2),
     );
     expect(find.byIcon(Icons.qr_code_2), findsNothing);
+  });
+
+  testWidgets('价格、记一笔、删除三者的间距一致', (tester) async {
+    await pumpTile(
+      tester,
+      product: Product(id: 'SP0001', name: '矿泉水', retailPrice: 2),
+      onQuickSale: () {},
+    );
+    final price = tester.getRect(find.text('¥2.00'));
+    final buttons = find.byType(IconButton);
+    final quick = tester.getRect(buttons.at(0));
+    final del = tester.getRect(buttons.at(1));
+    // 用户反馈过两次「排布不均」。根因不是间距数值，而是两种按钮的**可见边界**
+    // 不同：有底色的是 36dp 色块、没底色的只剩 20dp 图标，差了 8dp。
+    // 现在两者都是同尺寸的实心块，间距必须严格相等。
+    expect(quick.left - price.right, closeTo(del.left - quick.right, 0.5),
+        reason: '价格→记一笔 与 记一笔→删除 的间距必须相等');
   });
 
   testWidgets('13 位条码完整显示，不被省略号截断', (tester) async {
