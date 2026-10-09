@@ -360,13 +360,18 @@ flutter build web --release                                   # Web 版 → buil
 ```
 
 > **为什么出包只带 arm64**：默认的 `flutter build apk --release` 会把 `x86_64`
-> （只有模拟器用）和 `armeabi-v7a`（老 32 位机）一起打进去 —— **三套 ABI 各带一份
-> 完整的 Flutter 引擎**（`libflutter.so`）+ 一份自己的 Dart 代码（`libapp.so`）
-> + 一份扫码库（`libbarhopper_v3.so`）。实测剥离后重新打包：**73.09 MB → 26.69 MB**，
-> 省 63%。
+> （只有模拟器用）和 `armeabi-v7a`（老 32 位机）一起打进去。实测 **73.09 MB → 27 MB**。
+>
+> 这需要**两处配合**，缺一不可：
+> 1. 命令行 `--target-platform android-arm64` —— 去掉重复的 **Flutter 引擎**
+>    （`libflutter.so` 每个 ABI 一份，是体积大头）
+> 2. `android/app/build.gradle.kts` 里的 `ndk { abiFilters }` —— 去掉重复的
+>    **第三方插件原生库**（如扫码库 `libbarhopper_v3.so`，约 9MB）
+>
+> 只做第 1 条的话包仍会停在 36MB 左右。
 >
 > 将来若要分发给用老手机的人，改用 `--split-per-abi` 并额外提供
-> `app-armeabi-v7a-release.apk`（23 MB），不要退回无参数的 fat 包。
+> `app-armeabi-v7a-release.apk`，同时把上面的 `abiFilters` 补上 `"armeabi-v7a"`。
 
 > Windows 下若 `flutter` 命令报 PATH 异常，先 `export PATH="/usr/bin:/bin:/c/Windows/System32:$PATH"`；本机构建前需 `unset NODE_OPTIONS` 与各类代理变量。
 
